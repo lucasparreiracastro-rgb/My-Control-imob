@@ -1,21 +1,19 @@
 import React from 'react';
-import { Property, Lead, PropertyStatus } from '../types';
+import { Property, PropertyStatus } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Building2, Users, DollarSign, TrendingUp } from 'lucide-react';
+import { Building2, DollarSign, TrendingUp } from 'lucide-react';
 
 interface DashboardProps {
   properties: Property[];
-  leads: Lead[];
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
-const Dashboard: React.FC<DashboardProps> = ({ properties, leads }) => {
+const Dashboard: React.FC<DashboardProps> = ({ properties }) => {
   
   // Calculate stats
   const totalValue = properties.reduce((acc, curr) => acc + curr.price, 0);
   const activeProperties = properties.filter(p => p.status === PropertyStatus.AVAILABLE).length;
-  const totalLeads = leads.length;
   const recentSales = properties.filter(p => p.status === PropertyStatus.SOLD).length;
 
   // Prepare chart data
@@ -50,7 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ properties, leads }) => {
       <h2 className="text-2xl font-bold text-gray-800">Visão Geral</h2>
       
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard 
           title="Valor em Carteira" 
           value={`R$ ${(totalValue / 1000000).toFixed(1)}M`} 
@@ -62,12 +60,6 @@ const Dashboard: React.FC<DashboardProps> = ({ properties, leads }) => {
           value={activeProperties} 
           icon={Building2} 
           color="bg-blue-500" 
-        />
-        <StatCard 
-          title="Leads Totais" 
-          value={totalLeads} 
-          icon={Users} 
-          color="bg-purple-500" 
         />
         <StatCard 
           title="Vendas Recentes" 

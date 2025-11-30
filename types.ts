@@ -1,3 +1,4 @@
+
 export enum PropertyType {
   APARTMENT = 'Apartamento',
   HOUSE = 'Casa',
@@ -10,6 +11,14 @@ export enum PropertyStatus {
   SOLD = 'Vendido',
   RENTED = 'Alugado',
   PENDING = 'Em Negociação'
+}
+
+export interface RentalRecord {
+  date: string; // Data de referência ou data do pagamento
+  checkIn?: string; // Data de entrada (opcional)
+  checkOut?: string; // Data de saída (opcional)
+  amount: number;
+  description: string;
 }
 
 export interface Property {
@@ -25,6 +34,7 @@ export interface Property {
   area: number; // m²
   imageUrl: string;
   features: string[];
+  rentalHistory: RentalRecord[];
 }
 
 export interface Lead {
@@ -44,4 +54,4 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export type ViewState = 'dashboard' | 'properties' | 'ai-chat' | 'leads';
+export type ViewState = 'dashboard' | 'properties' | 'ai-chat' | 'settings';

@@ -1,5 +1,6 @@
+
 import { GoogleGenAI } from "@google/genai";
-import { Property } from '../types';
+import { Property, RentalRecord } from '../types';
 
 const getAiClient = () => {
   const apiKey = process.env.API_KEY;
@@ -42,6 +43,53 @@ export const generatePropertyDescription = async (
   }
 };
 
+export const extractRentalDataFromPdf = async (
+  base64Pdf: string, 
+  mimeType: string = 'application/pdf'
+): Promise<RentalRecord[]> => {
+  try {
+    const ai = getAiClient();
+    
+    const prompt = `
+      Analise este documento financeiro/extrato. 
+      Identifique todas as entradas de valores referentes a diárias, aluguéis ou pagamentos recebidos.
+      
+      Extraia:
+      1. A data da transação (formato DD/MM/YYYY)
+      2. O valor monetário (número positivo)
+      3. Uma breve descrição (ex: "Diária Airbnb", "Pagamento Aluguel")
+
+      Retorne APENAS um JSON array puro, sem markdown, no formato:
+      [
+        { "date": "string", "amount": number, "description": "string" }
+      ]
+      
+      Se não encontrar nada, retorne [].
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: {
+        parts: [
+          { inlineData: { mimeType: mimeType, data: base64Pdf } },
+          { text: prompt }
+        ]
+      },
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const text = response.text;
+    if (!text) return [];
+    
+    return JSON.parse(text) as RentalRecord[];
+  } catch (error) {
+    console.error("Error extracting PDF data:", error);
+    return [];
+  }
+};
+
 export const chatWithPortfolio = async (
   message: string,
   portfolio: Property[],
@@ -69,13 +117,6 @@ export const chatWithPortfolio = async (
       4. Se a pergunta não for sobre imóveis, tente ajudar de forma geral sobre o mercado imobiliário.
       5. Responda sempre em Português do Brasil.
     `;
-
-    // Format history for the API correctly if using chat mode, 
-    // but for simple single-turn with context, generateContent with system instruction is robust.
-    // Ideally we use chats.create but for stateless simplicity here we can pass history in prompt or use proper chat structure if we maintain state object.
-    // Let's use ai.chats.create for better multi-turn handling if we were persisting the chat object properly.
-    // Given the constraints and the stateless nature of this function call wrapper, we will construct the prompt with history or use chat object if we kept it alive.
-    // Let's instantiate a fresh chat with history for this turn.
     
     const chat = ai.chats.create({
       model: 'gemini-2.5-flash',
