@@ -13,12 +13,15 @@ export enum PropertyStatus {
   PENDING = 'Em Negociação'
 }
 
+export type TransactionType = 'revenue' | 'expense';
+
 export interface RentalRecord {
   date: string; // Data de referência ou data do pagamento
   checkIn?: string; // Data de entrada (opcional)
   checkOut?: string; // Data de saída (opcional)
   amount: number;
   description: string;
+  type: TransactionType; // Novo campo: receita ou despesa
 }
 
 export interface Property {

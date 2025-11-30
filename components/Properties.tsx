@@ -1,8 +1,8 @@
 
-import React, { useState, useRef } from 'react';
-import { Property, PropertyType, PropertyStatus, RentalRecord } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { Property, PropertyType, PropertyStatus, RentalRecord, TransactionType } from '../types';
 import { extractRentalDataFromPdf } from '../services/geminiService';
-import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, Upload, FileText, Loader2, DollarSign, Trash2, Calendar, Save, ArrowRight } from 'lucide-react';
+import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, Upload, FileText, Loader2, DollarSign, Trash2, Calendar, Save, ArrowRight, Filter, Camera, Image as ImageIcon, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 
 interface PropertiesProps {
   properties: Property[];
@@ -20,17 +20,31 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   // Filter State
   const [filter, setFilter] = useState('');
   
+  // History Date Filter State
+  const [historyFilterStart, setHistoryFilterStart] = useState('');
+  const [historyFilterEnd, setHistoryFilterEnd] = useState('');
+  
   // Add Property Form State
   const [formData, setFormData] = useState<Partial<Property>>({
-    title: ''
+    title: '',
+    price: 0,
+    description: '',
+    imageUrl: ''
   });
 
   // Manual Record State
-  const [manualRecord, setManualRecord] = useState({
+  const [manualRecord, setManualRecord] = useState<{
+    checkIn: string;
+    checkOut: string;
+    description: string;
+    amount: string;
+    type: TransactionType;
+  }>({
     checkIn: '',
     checkOut: '',
     description: '',
-    amount: ''
+    amount: '',
+    type: 'revenue'
   });
 
   // PDF Processing State
@@ -38,32 +52,94 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [extractedRecords, setExtractedRecords] = useState<RentalRecord[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset filters when opening a new property
+  useEffect(() => {
+    if (viewingProperty) {
+      setHistoryFilterStart('');
+      setHistoryFilterEnd('');
+    }
+  }, [viewingProperty?.id]);
 
   const filteredProperties = properties.filter(p => 
     p.title.toLowerCase().includes(filter.toLowerCase()) || 
     p.address.toLowerCase().includes(filter.toLowerCase())
   );
 
+  // Helper to parse DD/MM/YYYY to Date object for comparison
+  const parseRecordDate = (dateStr: string) => {
+    if (!dateStr) return null;
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      // Month is 0-indexed in JS Date
+      return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    }
+    return null;
+  };
+
+  // Derived state for filtered history
+  const filteredHistory = viewingProperty?.rentalHistory?.filter(record => {
+    if (!historyFilterStart && !historyFilterEnd) return true;
+
+    const recordDate = parseRecordDate(record.date);
+    if (!recordDate) return true;
+
+    // Reset hours for accurate date comparison
+    recordDate.setHours(0, 0, 0, 0);
+
+    let isValid = true;
+
+    if (historyFilterStart) {
+      const startDate = new Date(historyFilterStart);
+      startDate.setHours(0, 0, 0, 0);
+      if (recordDate < startDate) isValid = false;
+    }
+
+    if (historyFilterEnd) {
+      const endDate = new Date(historyFilterEnd);
+      endDate.setHours(0, 0, 0, 0);
+      if (recordDate > endDate) isValid = false;
+    }
+
+    return isValid;
+  }) || [];
+
+  const totalRevenue = filteredHistory.filter(r => r.type === 'revenue' || !r.type).reduce((acc, curr) => acc + curr.amount, 0);
+  const totalExpense = filteredHistory.filter(r => r.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+  const netBalance = totalRevenue - totalExpense;
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const newProperty: Property = {
       id: Math.random().toString(36).substr(2, 9),
       title: formData.title || 'Novo Imóvel',
-      description: 'Descrição pendente.',
-      price: 0,
+      description: formData.description || 'Sem observações.',
+      price: Number(formData.price) || 0,
       type: PropertyType.APARTMENT,
       status: PropertyStatus.AVAILABLE,
       address: 'Endereço a definir',
       bedrooms: 0,
       bathrooms: 0,
       area: 0,
-      imageUrl: 'https://picsum.photos/800/600',
+      imageUrl: formData.imageUrl || 'https://picsum.photos/800/600',
       features: [],
       rentalHistory: []
     };
     onAddProperty(newProperty);
     setIsModalOpen(false);
-    setFormData({ title: '' });
+    setFormData({ title: '', price: 0, description: '', imageUrl: '' });
   };
 
   const formatDate = (dateStr: string) => {
@@ -74,17 +150,31 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
 
   const handleAddManualRecord = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!viewingProperty || !manualRecord.checkIn || !manualRecord.checkOut || !manualRecord.amount) return;
+    if (!viewingProperty || !manualRecord.amount) return;
 
-    const formattedCheckIn = formatDate(manualRecord.checkIn);
-    const formattedCheckOut = formatDate(manualRecord.checkOut);
+    // Se for despesa, só precisa de uma data (usa checkIn como data de referência)
+    // Se for receita e tiver checkIn/checkOut, usa as datas formatadas.
+
+    let recordDate = '';
+    let formattedCheckIn = undefined;
+    let formattedCheckOut = undefined;
+
+    if (manualRecord.checkIn) {
+      recordDate = formatDate(manualRecord.checkIn);
+      formattedCheckIn = recordDate;
+    }
+    
+    if (manualRecord.checkOut) {
+       formattedCheckOut = formatDate(manualRecord.checkOut);
+    }
 
     const newRecord: RentalRecord = {
-      date: formattedCheckIn, // Usa a data de check-in como data de referência
+      date: recordDate || new Date().toLocaleDateString('pt-BR'),
       checkIn: formattedCheckIn,
       checkOut: formattedCheckOut,
-      description: manualRecord.description || 'Lançamento Manual',
-      amount: parseFloat(manualRecord.amount)
+      description: manualRecord.description || (manualRecord.type === 'expense' ? 'Despesa' : 'Receita'),
+      amount: parseFloat(manualRecord.amount),
+      type: manualRecord.type
     };
 
     const updatedProperty = {
@@ -93,8 +183,8 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     };
 
     onUpdateProperty(updatedProperty);
-    setViewingProperty(updatedProperty); // Update local view
-    setManualRecord({ checkIn: '', checkOut: '', description: '', amount: '' }); // Reset form
+    setViewingProperty(updatedProperty);
+    setManualRecord({ checkIn: '', checkOut: '', description: '', amount: '', type: 'revenue' });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,7 +203,6 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64String = reader.result as string;
-        // Remove data URL prefix (e.g., "data:application/pdf;base64,")
         const base64Content = base64String.split(',')[1];
         
         const records = await extractRentalDataFromPdf(base64Content);
@@ -247,7 +336,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
              <div className="p-6 border-b flex justify-between items-center bg-white rounded-t-2xl">
                <div>
                 <h3 className="text-xl font-bold text-gray-800">{viewingProperty.title}</h3>
-                <p className="text-sm text-gray-500">Histórico de Aluguéis e Diárias</p>
+                <p className="text-sm text-gray-500">Gestão Financeira</p>
                </div>
                <button onClick={() => setViewingProperty(null)} className="text-gray-500 hover:text-gray-700">
                  <X size={24} />
@@ -255,17 +344,30 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
              </div>
              
              <div className="p-6 overflow-y-auto">
+                {viewingProperty.description && viewingProperty.description !== 'Descrição pendente.' && (
+                   <div className="mb-6 bg-yellow-50 p-4 rounded-xl border border-yellow-100">
+                     <h4 className="font-semibold text-yellow-800 mb-2 text-sm">Observações / Descrição</h4>
+                     <p className="text-sm text-gray-700 whitespace-pre-line">{viewingProperty.description}</p>
+                   </div>
+                )}
+
                 <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                        <p className="text-blue-600 text-sm font-medium">Total Arrecadado</p>
-                        <p className="text-2xl font-bold text-blue-800">
-                            R$ {viewingProperty.rentalHistory?.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                        <p className="text-green-600 text-sm font-medium">Receita Total</p>
+                        <p className="text-2xl font-bold text-green-800">
+                            R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
                     </div>
-                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
-                        <p className="text-purple-600 text-sm font-medium">Total de Registros</p>
-                        <p className="text-2xl font-bold text-purple-800">
-                            {viewingProperty.rentalHistory?.length || 0}
+                    <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                        <p className="text-red-600 text-sm font-medium">Despesa Total</p>
+                        <p className="text-2xl font-bold text-red-800">
+                            R$ {totalExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                    </div>
+                    <div className={`${netBalance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'} p-4 rounded-xl border`}>
+                        <p className={`${netBalance >= 0 ? 'text-blue-600' : 'text-orange-600'} text-sm font-medium`}>Saldo Líquido</p>
+                        <p className={`${netBalance >= 0 ? 'text-blue-800' : 'text-orange-800'} text-2xl font-bold`}>
+                            R$ {netBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
                     </div>
                 </div>
@@ -273,12 +375,35 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                 <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2 text-sm">
                         <Plus size={16} className="text-blue-600" />
-                        Novo Lançamento Manual
+                        Lançamento Manual
                     </h4>
                     <form onSubmit={handleAddManualRecord} className="flex flex-col gap-3">
+                        <div className="flex gap-4 mb-2">
+                           <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="radio" 
+                                name="type" 
+                                checked={manualRecord.type === 'revenue'}
+                                onChange={() => setManualRecord({...manualRecord, type: 'revenue'})}
+                                className="text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-gray-700 font-medium">Receita</span>
+                           </label>
+                           <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="radio" 
+                                name="type" 
+                                checked={manualRecord.type === 'expense'}
+                                onChange={() => setManualRecord({...manualRecord, type: 'expense'})}
+                                className="text-red-600 focus:ring-red-500"
+                              />
+                              <span className="text-sm text-gray-700 font-medium">Despesa</span>
+                           </label>
+                        </div>
+
                         <div className="flex flex-col md:flex-row gap-3">
                           <div className="flex-1 w-full">
-                              <label className="text-xs text-gray-500 font-medium mb-1 block">Check-in</label>
+                              <label className="text-xs text-gray-500 font-medium mb-1 block">Data / Check-in</label>
                               <input 
                                   type="date" 
                                   required
@@ -287,23 +412,24 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                                   className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                               />
                           </div>
-                          <div className="flex-1 w-full">
-                              <label className="text-xs text-gray-500 font-medium mb-1 block">Check-out</label>
-                              <input 
-                                  type="date" 
-                                  required
-                                  value={manualRecord.checkOut}
-                                  onChange={(e) => setManualRecord({...manualRecord, checkOut: e.target.value})}
-                                  className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                              />
-                          </div>
+                          {manualRecord.type === 'revenue' && (
+                            <div className="flex-1 w-full">
+                                <label className="text-xs text-gray-500 font-medium mb-1 block">Check-out (Opcional)</label>
+                                <input 
+                                    type="date" 
+                                    value={manualRecord.checkOut}
+                                    onChange={(e) => setManualRecord({...manualRecord, checkOut: e.target.value})}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col md:flex-row gap-3 items-end">
                             <div className="flex-[2] w-full">
                                 <label className="text-xs text-gray-500 font-medium mb-1 block">Descrição</label>
                                 <input 
                                     type="text" 
-                                    placeholder="Ex: Diária Airbnb"
+                                    placeholder={manualRecord.type === 'expense' ? "Ex: Conta de Luz, Manutenção" : "Ex: Diária Airbnb"}
                                     value={manualRecord.description}
                                     onChange={(e) => setManualRecord({...manualRecord, description: e.target.value})}
                                     className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
@@ -322,52 +448,92 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                                     className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                                 />
                             </div>
-                            <button type="submit" className="w-full md:w-auto p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center">
+                            <button type="submit" className={`w-full md:w-auto p-2 text-white rounded-lg transition-colors flex items-center justify-center ${manualRecord.type === 'expense' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
                                 <Save size={18} />
                             </button>
                         </div>
                     </form>
                 </div>
 
-                <h4 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                    <Calendar size={18} />
-                    Extrato de Lançamentos
-                </h4>
+                <div className="flex flex-col sm:flex-row justify-between items-end sm:items-center mb-4 gap-4">
+                  <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+                      <Calendar size={18} />
+                      Extrato Financeiro
+                  </h4>
+                  <div className="flex items-center gap-2 w-full sm:w-auto bg-gray-50 p-2 rounded-lg border border-gray-200">
+                    <Filter size={16} className="text-gray-400" />
+                    <div className="flex items-center gap-2">
+                       <input 
+                         type="date" 
+                         value={historyFilterStart}
+                         onChange={(e) => setHistoryFilterStart(e.target.value)}
+                         className="bg-white border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+                         placeholder="De"
+                       />
+                       <span className="text-gray-400 text-xs">até</span>
+                       <input 
+                         type="date" 
+                         value={historyFilterEnd}
+                         onChange={(e) => setHistoryFilterEnd(e.target.value)}
+                         className="bg-white border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+                         placeholder="Até"
+                       />
+                    </div>
+                    {(historyFilterStart || historyFilterEnd) && (
+                      <button 
+                        onClick={() => { setHistoryFilterStart(''); setHistoryFilterEnd(''); }}
+                        className="text-xs text-red-500 hover:text-red-700 px-2"
+                        title="Limpar filtros"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
                 
                 <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-gray-50 border-b">
                             <tr>
-                                <th className="p-3 font-semibold text-gray-600">Período / Data</th>
+                                <th className="p-3 font-semibold text-gray-600">Data / Período</th>
+                                <th className="p-3 font-semibold text-gray-600">Tipo</th>
                                 <th className="p-3 font-semibold text-gray-600">Descrição</th>
                                 <th className="p-3 font-semibold text-gray-600 text-right">Valor</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">
-                            {viewingProperty.rentalHistory && viewingProperty.rentalHistory.length > 0 ? (
-                                viewingProperty.rentalHistory.map((record, idx) => (
+                            {filteredHistory.length > 0 ? (
+                                filteredHistory.map((record, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50">
                                         <td className="p-3 text-gray-800">
                                           {record.checkIn && record.checkOut ? (
-                                            <div className="flex flex-col sm:flex-row sm:items-center gap-1">
-                                              <span>{record.checkIn}</span>
-                                              <ArrowRight size={12} className="text-gray-400" />
-                                              <span>{record.checkOut}</span>
+                                            <div className="flex flex-col gap-1">
+                                              <span className="flex items-center gap-1 text-xs text-gray-500"><ArrowRight size={10} /> {record.checkIn}</span>
+                                              <span className="flex items-center gap-1 text-xs text-gray-500"><ArrowRight size={10} /> {record.checkOut}</span>
                                             </div>
                                           ) : (
                                             record.date
                                           )}
                                         </td>
+                                        <td className="p-3">
+                                            {record.type === 'expense' ? (
+                                                <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-medium">Despesa</span>
+                                            ) : (
+                                                <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-medium">Receita</span>
+                                            )}
+                                        </td>
                                         <td className="p-3 text-gray-600">{record.description}</td>
-                                        <td className="p-3 text-gray-800 font-medium text-right text-green-600">
-                                            + R$ {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        <td className={`p-3 font-medium text-right ${record.type === 'expense' ? 'text-red-600' : 'text-green-600'}`}>
+                                            {record.type === 'expense' ? '-' : '+'} R$ {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={3} className="p-8 text-center text-gray-500">
-                                        Nenhum registro de aluguel ou diária encontrado para este imóvel.
+                                    <td colSpan={4} className="p-8 text-center text-gray-500">
+                                        {viewingProperty.rentalHistory && viewingProperty.rentalHistory.length > 0 
+                                          ? "Nenhum registro encontrado para o período selecionado."
+                                          : "Nenhum registro financeiro encontrado."}
                                     </td>
                                 </tr>
                             )}
@@ -382,7 +548,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
       {/* Modal - Add Property */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
             <div className="p-6 border-b flex justify-between items-center bg-white rounded-t-2xl">
               <h3 className="text-xl font-bold text-gray-800">Adicionar Novo Imóvel</h3>
               <button onClick={() => setIsModalOpen(false)} className="text-gray-500 hover:text-gray-700">
@@ -390,7 +556,37 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
               </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+              
+              {/* Image Upload */}
+              <div 
+                className="w-full h-48 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer overflow-hidden relative group hover:border-blue-500 transition-colors"
+                onClick={() => imageInputRef.current?.click()}
+              >
+                {formData.imageUrl ? (
+                  <>
+                    <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="bg-white/90 px-3 py-1.5 rounded-full text-sm font-medium text-gray-700 flex items-center gap-2">
+                         <Camera size={16} /> Alterar Foto
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center text-gray-400">
+                    <ImageIcon size={32} className="mb-2" />
+                    <span className="text-sm font-medium">Escolher Foto de Capa</span>
+                  </div>
+                )}
+                <input 
+                  type="file" 
+                  ref={imageInputRef} 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={handleImageSelect}
+                />
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Título do Imóvel</label>
                 <input 
@@ -402,8 +598,32 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                   onChange={e => setFormData({...formData, title: e.target.value})} 
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Valor do Imóvel (R$)</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
+                  placeholder="0,00"
+                  value={formData.price || ''} 
+                  onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})} 
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
+                <textarea 
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none" 
+                  placeholder="Detalhes sobre localização, estado do imóvel, etc..."
+                  rows={3}
+                  value={formData.description || ''} 
+                  onChange={e => setFormData({...formData, description: e.target.value})} 
+                />
+              </div>
               
-              <div className="flex justify-end gap-3 pt-4 border-t">
+              <div className="flex justify-end gap-3 pt-4 border-t mt-2">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg font-medium">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm flex items-center gap-2 font-medium">
                   <Check size={18} /> Salvar

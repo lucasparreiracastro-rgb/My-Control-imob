@@ -1,3 +1,4 @@
+
 import { Property, PropertyType, PropertyStatus, Lead } from './types';
 
 export const MOCK_PROPERTIES: Property[] = [
@@ -30,8 +31,9 @@ export const MOCK_PROPERTIES: Property[] = [
     imageUrl: 'https://picsum.photos/800/600?random=2',
     features: ['Jardim', 'Lareira', 'Escritório', 'Garagem Subterrânea'],
     rentalHistory: [
-        { date: '15/04/2024', amount: 1500, description: 'Diária Airbnb' },
-        { date: '16/04/2024', amount: 1500, description: 'Diária Airbnb' }
+        { date: '15/04/2024', amount: 1500, description: 'Diária Airbnb', type: 'revenue' },
+        { date: '16/04/2024', amount: 1500, description: 'Diária Airbnb', type: 'revenue' },
+        { date: '20/04/2024', amount: 350, description: 'Manutenção Jardim', type: 'expense' }
     ]
   },
   {
@@ -48,8 +50,9 @@ export const MOCK_PROPERTIES: Property[] = [
     imageUrl: 'https://picsum.photos/800/600?random=3',
     features: ['Mobiliado', 'Lavanderia Coletiva', 'Coworking'],
     rentalHistory: [
-        { date: '01/05/2024', amount: 2500, description: 'Aluguel Mensal' },
-        { date: '01/04/2024', amount: 2500, description: 'Aluguel Mensal' }
+        { date: '01/05/2024', amount: 2500, description: 'Aluguel Mensal', type: 'revenue' },
+        { date: '01/04/2024', amount: 2500, description: 'Aluguel Mensal', type: 'revenue' },
+        { date: '10/04/2024', amount: 120, description: 'Reparo Chuveiro', type: 'expense' }
     ]
   },
   {

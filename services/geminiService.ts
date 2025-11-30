@@ -83,7 +83,14 @@ export const extractRentalDataFromPdf = async (
     const text = response.text;
     if (!text) return [];
     
-    return JSON.parse(text) as RentalRecord[];
+    const rawData = JSON.parse(text);
+    
+    // Add default type 'revenue' to extracted data
+    return rawData.map((item: any) => ({
+      ...item,
+      type: 'revenue'
+    })) as RentalRecord[];
+
   } catch (error) {
     console.error("Error extracting PDF data:", error);
     return [];
