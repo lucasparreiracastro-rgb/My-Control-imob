@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Property, PropertyType, PropertyStatus, RentalRecord, TransactionType } from '../types';
 import { extractRentalDataFromPdf } from '../services/geminiService';
-import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, Upload, FileText, Loader2, DollarSign, Trash2, Calendar, Save, ArrowRight, Filter, Camera, Image as ImageIcon, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, Upload, FileText, Loader2, DollarSign, Trash2, Calendar, Save, ArrowRight, Filter, Camera, Image as ImageIcon, ArrowDownCircle, ArrowUpCircle, Edit2 } from 'lucide-react';
 
 interface PropertiesProps {
   properties: Property[];
@@ -17,6 +17,10 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [viewingProperty, setViewingProperty] = useState<Property | null>(null);
   
+  // Description Edit State
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [tempDescription, setTempDescription] = useState('');
+
   // Filter State
   const [filter, setFilter] = useState('');
   
@@ -54,11 +58,13 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset filters when opening a new property
+  // Reset filters and edit state when opening a new property
   useEffect(() => {
     if (viewingProperty) {
       setHistoryFilterStart('');
       setHistoryFilterEnd('');
+      setIsEditingDescription(false);
+      setTempDescription(viewingProperty.description || '');
     }
   }, [viewingProperty?.id]);
 
@@ -148,6 +154,19 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     return `${day}/${month}/${year}`;
   };
 
+  const handleSaveDescription = () => {
+    if (!viewingProperty) return;
+    
+    const updatedProperty = {
+      ...viewingProperty,
+      description: tempDescription
+    };
+
+    onUpdateProperty(updatedProperty);
+    setViewingProperty(updatedProperty);
+    setIsEditingDescription(false);
+  };
+
   const handleAddManualRecord = (e: React.FormEvent) => {
     e.preventDefault();
     if (!viewingProperty || !manualRecord.amount) return;
@@ -185,6 +204,22 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     onUpdateProperty(updatedProperty);
     setViewingProperty(updatedProperty);
     setManualRecord({ checkIn: '', checkOut: '', description: '', amount: '', type: 'revenue' });
+  };
+
+  const handleDeleteRecord = (recordToDelete: RentalRecord) => {
+    if (!viewingProperty) return;
+
+    if (window.confirm('Tem certeza que deseja excluir este lançamento?')) {
+      const updatedHistory = viewingProperty.rentalHistory.filter(r => r !== recordToDelete);
+      
+      const updatedProperty = {
+        ...viewingProperty,
+        rentalHistory: updatedHistory
+      };
+
+      onUpdateProperty(updatedProperty);
+      setViewingProperty(updatedProperty);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -344,12 +379,50 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
              </div>
              
              <div className="p-6 overflow-y-auto">
-                {viewingProperty.description && viewingProperty.description !== 'Descrição pendente.' && (
-                   <div className="mb-6 bg-yellow-50 p-4 rounded-xl border border-yellow-100">
-                     <h4 className="font-semibold text-yellow-800 mb-2 text-sm">Observações / Descrição</h4>
-                     <p className="text-sm text-gray-700 whitespace-pre-line">{viewingProperty.description}</p>
-                   </div>
-                )}
+                <div className="mb-6 bg-yellow-50 p-4 rounded-xl border border-yellow-100">
+                  <div className="flex justify-between items-start mb-2">
+                     <h4 className="font-semibold text-yellow-800 text-sm">Observações / Descrição</h4>
+                     {!isEditingDescription && (
+                        <button 
+                           onClick={() => { setIsEditingDescription(true); setTempDescription(viewingProperty.description); }}
+                           className="text-yellow-600 hover:text-yellow-800 p-1 bg-yellow-100 rounded hover:bg-yellow-200 transition-colors"
+                           title="Editar descrição"
+                        >
+                           <Edit2 size={16} />
+                        </button>
+                     )}
+                  </div>
+                  
+                  {isEditingDescription ? (
+                    <div className="space-y-3">
+                       <textarea 
+                          value={tempDescription}
+                          onChange={(e) => setTempDescription(e.target.value)}
+                          className="w-full p-3 text-sm border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none bg-white"
+                          rows={4}
+                          placeholder="Digite as observações..."
+                       />
+                       <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => setIsEditingDescription(false)}
+                            className="px-3 py-1.5 text-yellow-700 text-xs font-medium hover:bg-yellow-100 rounded"
+                          >
+                            Cancelar
+                          </button>
+                          <button 
+                            onClick={handleSaveDescription}
+                            className="px-3 py-1.5 bg-yellow-600 text-white text-xs font-medium rounded hover:bg-yellow-700 flex items-center gap-1"
+                          >
+                            <Save size={14} /> Salvar
+                          </button>
+                       </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-700 whitespace-pre-line">
+                      {viewingProperty.description || "Nenhuma observação registrada."}
+                    </p>
+                  )}
+                </div>
 
                 <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-green-50 p-4 rounded-xl border border-green-100">
@@ -499,6 +572,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                                 <th className="p-3 font-semibold text-gray-600">Tipo</th>
                                 <th className="p-3 font-semibold text-gray-600">Descrição</th>
                                 <th className="p-3 font-semibold text-gray-600 text-right">Valor</th>
+                                <th className="p-3 font-semibold text-gray-600 text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">
@@ -526,11 +600,20 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                                         <td className={`p-3 font-medium text-right ${record.type === 'expense' ? 'text-red-600' : 'text-green-600'}`}>
                                             {record.type === 'expense' ? '-' : '+'} R$ {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </td>
+                                        <td className="p-3 text-right">
+                                            <button 
+                                              onClick={() => handleDeleteRecord(record)} 
+                                              className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                                              title="Excluir lançamento"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={4} className="p-8 text-center text-gray-500">
+                                    <td colSpan={5} className="p-8 text-center text-gray-500">
                                         {viewingProperty.rentalHistory && viewingProperty.rentalHistory.length > 0 
                                           ? "Nenhum registro encontrado para o período selecionado."
                                           : "Nenhum registro financeiro encontrado."}
