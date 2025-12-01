@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Property, PropertyType, PropertyStatus, RentalRecord, TransactionType } from '../types';
-import { extractRentalDataFromPdf } from '../services/geminiService';
-import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, Upload, FileText, Loader2, DollarSign, Trash2, Calendar, Save, ArrowRight, Filter, Camera, Image as ImageIcon, ArrowDownCircle, ArrowUpCircle, Edit2 } from 'lucide-react';
+import { extractRentalDataFromPdf, searchImages } from '../services/geminiService';
+import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, Upload, FileText, Loader2, DollarSign, Trash2, Calendar, Save, ArrowRight, Filter, Camera, Image as ImageIcon, ArrowDownCircle, ArrowUpCircle, Edit2, Pencil, Globe, Download, Zap } from 'lucide-react';
 
 interface PropertiesProps {
   properties: Property[];
@@ -17,7 +17,10 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [viewingProperty, setViewingProperty] = useState<Property | null>(null);
   
-  // Description Edit State
+  // Edit Property State (for the main form)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  
+  // Description Edit State (inside details view)
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [tempDescription, setTempDescription] = useState('');
 
@@ -28,13 +31,20 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   const [historyFilterStart, setHistoryFilterStart] = useState('');
   const [historyFilterEnd, setHistoryFilterEnd] = useState('');
   
-  // Add Property Form State
+  // Add/Edit Property Form State
   const [formData, setFormData] = useState<Partial<Property>>({
     title: '',
     price: 0,
     description: '',
-    imageUrl: ''
+    imageUrl: '',
+    consumerUnit: ''
   });
+
+  // Image Search State
+  const [imageTab, setImageTab] = useState<'upload' | 'search'>('upload');
+  const [imageSearchQuery, setImageSearchQuery] = useState('');
+  const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [imageSearchResults, setImageSearchResults] = useState<string[]>([]);
 
   // Manual Record State
   const [manualRecord, setManualRecord] = useState<{
@@ -126,26 +136,80 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     }
   };
 
+  const handleImageSearch = async () => {
+    if (!imageSearchQuery.trim()) return;
+    setIsSearchingImages(true);
+    const results = await searchImages(imageSearchQuery);
+    setImageSearchResults(results);
+    setIsSearchingImages(false);
+  };
+
+  const selectSearchedImage = (url: string) => {
+    setFormData(prev => ({ ...prev, imageUrl: url }));
+  };
+
+  const handleEditProperty = (e: React.MouseEvent, property: Property) => {
+    e.stopPropagation(); // Prevent opening details modal
+    setFormData({
+        title: property.title,
+        price: property.price,
+        description: property.description,
+        imageUrl: property.imageUrl,
+        consumerUnit: property.consumerUnit || ''
+    });
+    setImageSearchQuery(property.title); // Set initial search query to title
+    setEditingId(property.id);
+    setIsModalOpen(true);
+    setImageTab('upload');
+    setImageSearchResults([]);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingId(null);
+    setFormData({ title: '', price: 0, description: '', imageUrl: '', consumerUnit: '' });
+    setImageSearchResults([]);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const newProperty: Property = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: formData.title || 'Novo Imóvel',
-      description: formData.description || 'Sem observações.',
-      price: Number(formData.price) || 0,
-      type: PropertyType.APARTMENT,
-      status: PropertyStatus.AVAILABLE,
-      address: 'Endereço a definir',
-      bedrooms: 0,
-      bathrooms: 0,
-      area: 0,
-      imageUrl: formData.imageUrl || 'https://picsum.photos/800/600',
-      features: [],
-      rentalHistory: []
-    };
-    onAddProperty(newProperty);
-    setIsModalOpen(false);
-    setFormData({ title: '', price: 0, description: '', imageUrl: '' });
+    
+    if (editingId) {
+        // Update existing property
+        const existingProperty = properties.find(p => p.id === editingId);
+        if (existingProperty) {
+            const updatedProperty: Property = {
+                ...existingProperty,
+                title: formData.title || existingProperty.title,
+                price: Number(formData.price) || existingProperty.price,
+                description: formData.description || existingProperty.description,
+                imageUrl: formData.imageUrl || existingProperty.imageUrl,
+                consumerUnit: formData.consumerUnit || existingProperty.consumerUnit
+            };
+            onUpdateProperty(updatedProperty);
+        }
+    } else {
+        // Create new property
+        const newProperty: Property = {
+            id: Math.random().toString(36).substr(2, 9),
+            title: formData.title || 'Novo Imóvel',
+            description: formData.description || 'Sem observações.',
+            price: Number(formData.price) || 0,
+            type: PropertyType.APARTMENT,
+            status: PropertyStatus.AVAILABLE,
+            address: 'Endereço a definir',
+            consumerUnit: formData.consumerUnit || '',
+            bedrooms: 0,
+            bathrooms: 0,
+            area: 0,
+            imageUrl: formData.imageUrl || 'https://picsum.photos/800/600',
+            features: [],
+            rentalHistory: []
+        };
+        onAddProperty(newProperty);
+    }
+    
+    handleCloseModal();
   };
 
   const formatDate = (dateStr: string) => {
@@ -286,7 +350,12 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
             Importar Diárias (PDF)
           </button>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => { 
+                setIsModalOpen(true); 
+                setEditingId(null); 
+                setFormData({ title: '', price: 0, description: '', imageUrl: '', consumerUnit: '' }); 
+                setImageTab('upload');
+            }}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus size={20} />
@@ -318,17 +387,26 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
             <div className="relative h-48 overflow-hidden">
               <img src={property.imageUrl} alt={property.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
               
-              {/* Delete Button */}
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteProperty(property.id);
-                }}
-                className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm p-1.5 rounded-full text-red-500 hover:bg-red-50 transition-colors shadow-sm z-10"
-                title="Excluir imóvel"
-              >
-                <Trash2 size={16} />
-              </button>
+              {/* Actions Buttons */}
+              <div className="absolute top-3 left-3 flex gap-2 z-10">
+                <button 
+                    onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteProperty(property.id);
+                    }}
+                    className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full text-red-500 hover:bg-red-50 transition-colors shadow-sm"
+                    title="Excluir imóvel"
+                >
+                    <Trash2 size={16} />
+                </button>
+                <button 
+                    onClick={(e) => handleEditProperty(e, property)}
+                    className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full text-blue-600 hover:bg-blue-50 transition-colors shadow-sm"
+                    title="Editar cadastro"
+                >
+                    <Pencil size={16} />
+                </button>
+              </div>
 
               <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded text-xs font-semibold text-gray-700">
                 {property.status}
@@ -371,7 +449,14 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
              <div className="p-6 border-b flex justify-between items-center bg-white rounded-t-2xl">
                <div>
                 <h3 className="text-xl font-bold text-gray-800">{viewingProperty.title}</h3>
-                <p className="text-sm text-gray-500">Gestão Financeira</p>
+                <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
+                    <span className="flex items-center gap-1"><MapPin size={14} /> {viewingProperty.address}</span>
+                    {viewingProperty.consumerUnit && (
+                        <span className="flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full text-xs font-medium border border-yellow-200" title="Unidade Consumidora">
+                            <Zap size={12} fill="currentColor" /> UC: {viewingProperty.consumerUnit}
+                        </span>
+                    )}
+                </div>
                </div>
                <button onClick={() => setViewingProperty(null)} className="text-gray-500 hover:text-gray-700">
                  <X size={24} />
@@ -628,46 +713,113 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
          </div>
       )}
 
-      {/* Modal - Add Property */}
+      {/* Modal - Add/Edit Property */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
             <div className="p-6 border-b flex justify-between items-center bg-white rounded-t-2xl">
-              <h3 className="text-xl font-bold text-gray-800">Adicionar Novo Imóvel</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+              <h3 className="text-xl font-bold text-gray-800">{editingId ? 'Editar Imóvel' : 'Adicionar Novo Imóvel'}</h3>
+              <button onClick={handleCloseModal} className="text-gray-500 hover:text-gray-700">
                 <X size={24} />
               </button>
             </div>
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               
-              {/* Image Upload */}
-              <div 
-                className="w-full h-48 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer overflow-hidden relative group hover:border-blue-500 transition-colors"
-                onClick={() => imageInputRef.current?.click()}
-              >
-                {formData.imageUrl ? (
-                  <>
-                    <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="bg-white/90 px-3 py-1.5 rounded-full text-sm font-medium text-gray-700 flex items-center gap-2">
-                         <Camera size={16} /> Alterar Foto
-                      </div>
+              {/* Image Selection Section */}
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">Foto do Imóvel</label>
+                
+                {/* Tabs */}
+                <div className="flex p-1 bg-gray-100 rounded-lg">
+                    <button 
+                        type="button"
+                        onClick={() => setImageTab('upload')}
+                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${imageTab === 'upload' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Upload Local
+                    </button>
+                    <button 
+                        type="button"
+                        onClick={() => setImageTab('search')}
+                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${imageTab === 'search' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Buscar na Web (IA)
+                    </button>
+                </div>
+
+                {imageTab === 'upload' ? (
+                    <div 
+                        className="w-full h-48 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer overflow-hidden relative group hover:border-blue-500 transition-colors"
+                        onClick={() => imageInputRef.current?.click()}
+                    >
+                        {formData.imageUrl ? (
+                        <>
+                            <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="bg-white/90 px-3 py-1.5 rounded-full text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <Camera size={16} /> Alterar Foto
+                            </div>
+                            </div>
+                        </>
+                        ) : (
+                        <div className="flex flex-col items-center text-gray-400">
+                            <ImageIcon size={32} className="mb-2" />
+                            <span className="text-sm font-medium">Clique para selecionar</span>
+                        </div>
+                        )}
+                        <input 
+                        type="file" 
+                        ref={imageInputRef} 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={handleImageSelect}
+                        />
                     </div>
-                  </>
                 ) : (
-                  <div className="flex flex-col items-center text-gray-400">
-                    <ImageIcon size={32} className="mb-2" />
-                    <span className="text-sm font-medium">Escolher Foto de Capa</span>
-                  </div>
+                    <div className="space-y-3">
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                placeholder="Ex: Apartamento luxo sala ampla"
+                                value={imageSearchQuery}
+                                onChange={(e) => setImageSearchQuery(e.target.value)}
+                                className="flex-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                            <button 
+                                type="button" 
+                                onClick={handleImageSearch}
+                                disabled={isSearchingImages}
+                                className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {isSearchingImages ? <Loader2 className="animate-spin w-5 h-5" /> : <Search size={20} />}
+                            </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                            {imageSearchResults.length > 0 ? (
+                                imageSearchResults.map((url, idx) => (
+                                    <div 
+                                        key={idx} 
+                                        onClick={() => selectSearchedImage(url)}
+                                        className={`h-24 rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${formData.imageUrl === url ? 'border-blue-600 ring-2 ring-blue-200' : 'border-transparent hover:border-gray-300'}`}
+                                    >
+                                        <img src={url} alt={`Resultado ${idx}`} className="w-full h-full object-cover" />
+                                    </div>
+                                ))
+                            ) : (
+                                !isSearchingImages && (
+                                    <div className="col-span-2 text-center py-6 text-gray-400 text-xs">
+                                        Digite e busque para ver sugestões de imagens.
+                                    </div>
+                                )
+                            )}
+                        </div>
+                         {formData.imageUrl && imageSearchResults.includes(formData.imageUrl) && (
+                             <p className="text-xs text-green-600 flex items-center gap-1"><Check size={12}/> Imagem selecionada</p>
+                         )}
+                    </div>
                 )}
-                <input 
-                  type="file" 
-                  ref={imageInputRef} 
-                  accept="image/*" 
-                  className="hidden" 
-                  onChange={handleImageSelect}
-                />
               </div>
 
               <div>
@@ -679,6 +831,17 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                   placeholder="Ex: Apartamento no Centro"
                   value={formData.title || ''} 
                   onChange={e => setFormData({...formData, title: e.target.value})} 
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unidade Consumidora (UC)</label>
+                <input 
+                  type="text" 
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
+                  placeholder="Ex: 8439201"
+                  value={formData.consumerUnit || ''} 
+                  onChange={e => setFormData({...formData, consumerUnit: e.target.value})} 
                 />
               </div>
 
@@ -707,7 +870,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
               </div>
               
               <div className="flex justify-end gap-3 pt-4 border-t mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg font-medium">Cancelar</button>
+                <button type="button" onClick={handleCloseModal} className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg font-medium">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm flex items-center gap-2 font-medium">
                   <Check size={18} /> Salvar
                 </button>

@@ -32,6 +32,7 @@ export interface Property {
   type: PropertyType;
   status: PropertyStatus;
   address: string;
+  consumerUnit?: string; // Novo campo: Unidade Consumidora
   bedrooms: number;
   bathrooms: number;
   area: number; // m²

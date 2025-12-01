@@ -97,6 +97,68 @@ export const extractRentalDataFromPdf = async (
   }
 };
 
+export const searchImages = async (query: string): Promise<string[]> => {
+  try {
+    const ai = getAiClient();
+    
+    // Use Pollinations.ai for real-time image generation via URL.
+    // We need Gemini to translate the user's query (usually in Portuguese) 
+    // into short, effective English visual prompts.
+    
+    const prompt = `
+      Transform the following search query: "${query}" into 4 DISTINCT, SHORT, VISUAL keywords in English.
+      Keep each string under 6 words.
+      Focus on architecture, interior design, and realism.
+      
+      Example Input: "Apartamento luxo jardins"
+      Example Output: [
+        "luxury modern apartment living room interior",
+        "modern building facade glass architecture",
+        "cozy bedroom apartment city view",
+        "luxury kitchen marble countertop interior"
+      ]
+
+      Return ONLY the JSON array of strings.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("No text returned");
+    
+    const descriptions = JSON.parse(text) as string[];
+
+    // Map descriptions to Pollinations.ai URLs
+    // Using model=flux for better quality and adding a random seed to ensure variety
+    return descriptions.map(desc => {
+      const encoded = encodeURIComponent(desc);
+      const randomSeed = Math.floor(Math.random() * 10000);
+      return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=600&nologo=true&model=flux&seed=${randomSeed}`;
+    });
+
+  } catch (error) {
+    console.error("Error searching images:", error);
+    
+    // Fallback: Create simple URL based on original query
+    // Strip special chars and keep it simple
+    const cleanQuery = query.replace(/[^a-zA-Z0-9 ]/g, "").split(" ").slice(0, 3).join(" ");
+    const encoded = encodeURIComponent(cleanQuery + " real estate architecture");
+    
+    return [
+      `https://image.pollinations.ai/prompt/${encoded}?width=800&height=600&nologo=true&model=flux&seed=101`,
+      `https://image.pollinations.ai/prompt/${encoded}%20interior?width=800&height=600&nologo=true&model=flux&seed=202`,
+      `https://image.pollinations.ai/prompt/${encoded}%20modern?width=800&height=600&nologo=true&model=flux&seed=303`,
+      `https://image.pollinations.ai/prompt/${encoded}%20view?width=800&height=600&nologo=true&model=flux&seed=404`
+    ];
+  }
+};
+
 export const chatWithPortfolio = async (
   message: string,
   portfolio: Property[],
