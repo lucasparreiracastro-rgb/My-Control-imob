@@ -186,23 +186,23 @@ const App: React.FC = () => {
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden print:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#111827] transform transition-transform duration-300 ease-in-out
+        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#111827] transform transition-transform duration-300 ease-in-out print:hidden
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <NavContent />
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden print:h-auto print:overflow-visible">
         {/* Top Header Mobile */}
-        <header className="bg-white p-4 border-b flex items-center justify-between lg:hidden shadow-sm z-30">
+        <header className="bg-white p-4 border-b flex items-center justify-between lg:hidden shadow-sm z-30 print:hidden">
           <h1 className="font-bold text-gray-800">ImobControl AI</h1>
           <button 
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -213,8 +213,8 @@ const App: React.FC = () => {
         </header>
 
         {/* View Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
-          <div className="max-w-7xl mx-auto">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 print:overflow-visible print:p-0">
+          <div className="max-w-7xl mx-auto print:max-w-none print:w-full">
             {currentView === 'dashboard' && <Dashboard properties={properties} />}
             {currentView === 'properties' && (
               <Properties 

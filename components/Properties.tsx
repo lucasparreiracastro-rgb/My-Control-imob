@@ -730,6 +730,23 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-gray-700">Foto do Imóvel</label>
                 
+                {/* Preview / Current Image */}
+                <div 
+                    className="w-full h-48 bg-gray-50 rounded-lg border-2 border-gray-200 overflow-hidden mb-2 relative group"
+                >
+                    {formData.imageUrl ? (
+                        <img src={formData.imageUrl} alt="Capa Atual" className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                            <ImageIcon size={40} className="mb-2 opacity-50" />
+                            <span className="text-xs">Nenhuma imagem selecionada</span>
+                        </div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent flex items-end p-3">
+                        <span className="text-white text-xs font-medium px-2 py-1 bg-black/50 rounded-full backdrop-blur-sm">Capa Atual</span>
+                    </div>
+                </div>
+
                 {/* Tabs */}
                 <div className="flex p-1 bg-gray-100 rounded-lg">
                     <button 
@@ -744,30 +761,17 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                         onClick={() => setImageTab('search')}
                         className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${imageTab === 'search' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                     >
-                        Buscar na Web (IA)
+                        Buscar na Web
                     </button>
                 </div>
 
                 {imageTab === 'upload' ? (
                     <div 
-                        className="w-full h-48 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer overflow-hidden relative group hover:border-blue-500 transition-colors"
+                        className="w-full py-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-colors text-gray-500 hover:text-blue-600"
                         onClick={() => imageInputRef.current?.click()}
                     >
-                        {formData.imageUrl ? (
-                        <>
-                            <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div className="bg-white/90 px-3 py-1.5 rounded-full text-sm font-medium text-gray-700 flex items-center gap-2">
-                                <Camera size={16} /> Alterar Foto
-                            </div>
-                            </div>
-                        </>
-                        ) : (
-                        <div className="flex flex-col items-center text-gray-400">
-                            <ImageIcon size={32} className="mb-2" />
-                            <span className="text-sm font-medium">Clique para selecionar</span>
-                        </div>
-                        )}
+                        <Camera size={24} className="mb-2" />
+                        <span className="text-xs font-medium">Clique para escolher arquivo</span>
                         <input 
                         type="file" 
                         ref={imageInputRef} 
@@ -802,22 +806,24 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                                     <div 
                                         key={idx} 
                                         onClick={() => selectSearchedImage(url)}
-                                        className={`h-24 rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${formData.imageUrl === url ? 'border-blue-600 ring-2 ring-blue-200' : 'border-transparent hover:border-gray-300'}`}
+                                        className={`h-24 rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative ${formData.imageUrl === url ? 'border-blue-600 ring-2 ring-blue-200' : 'border-transparent hover:border-gray-300'}`}
                                     >
                                         <img src={url} alt={`Resultado ${idx}`} className="w-full h-full object-cover" />
+                                        {formData.imageUrl === url && (
+                                            <div className="absolute inset-0 bg-blue-600/20 flex items-center justify-center">
+                                                <Check className="text-white drop-shadow-md" size={24} />
+                                            </div>
+                                        )}
                                     </div>
                                 ))
                             ) : (
                                 !isSearchingImages && (
                                     <div className="col-span-2 text-center py-6 text-gray-400 text-xs">
-                                        Digite e busque para ver sugestões de imagens.
+                                        Digite e busque para ver sugestões.
                                     </div>
                                 )
                             )}
                         </div>
-                         {formData.imageUrl && imageSearchResults.includes(formData.imageUrl) && (
-                             <p className="text-xs text-green-600 flex items-center gap-1"><Check size={12}/> Imagem selecionada</p>
-                         )}
                     </div>
                 )}
               </div>

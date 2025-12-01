@@ -98,65 +98,31 @@ export const extractRentalDataFromPdf = async (
 };
 
 export const searchImages = async (query: string): Promise<string[]> => {
-  try {
-    const ai = getAiClient();
-    
-    // Use Pollinations.ai for real-time image generation via URL.
-    // We need Gemini to translate the user's query (usually in Portuguese) 
-    // into short, effective English visual prompts.
-    
-    const prompt = `
-      Transform the following search query: "${query}" into 4 DISTINCT, SHORT, VISUAL keywords in English.
-      Keep each string under 6 words.
-      Focus on architecture, interior design, and realism.
-      
-      Example Input: "Apartamento luxo jardins"
-      Example Output: [
-        "luxury modern apartment living room interior",
-        "modern building facade glass architecture",
-        "cozy bedroom apartment city view",
-        "luxury kitchen marble countertop interior"
-      ]
+  // Simulates a short network delay for better UX
+  await new Promise(resolve => setTimeout(resolve, 300));
 
-      Return ONLY the JSON array of strings.
-    `;
+  // Sanitize the query: strip special chars that might break URLs, allow basic accents
+  const safeQuery = query.replace(/[^\w\s\u00C0-\u00FF-]/g, '').trim();
+  
+  // Define variations to ensure we get different looking images
+  const variations = [
+    "architecture modern realistic 8k",
+    "interior design luxury bright",
+    "building facade wide angle daylight",
+    "cozy living room apartment interior"
+  ];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json'
-      }
-    });
-
-    const text = response.text;
-    if (!text) throw new Error("No text returned");
+  return variations.map((suffix, index) => {
+    // Combine safe query with a visual style suffix
+    const fullPrompt = `${safeQuery} ${suffix}`;
+    const encoded = encodeURIComponent(fullPrompt);
     
-    const descriptions = JSON.parse(text) as string[];
-
-    // Map descriptions to Pollinations.ai URLs
-    // Using model=flux for better quality and adding a random seed to ensure variety
-    return descriptions.map(desc => {
-      const encoded = encodeURIComponent(desc);
-      const randomSeed = Math.floor(Math.random() * 10000);
-      return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=600&nologo=true&model=flux&seed=${randomSeed}`;
-    });
-
-  } catch (error) {
-    console.error("Error searching images:", error);
+    // Add a random seed to prevent caching issues and ensure variety
+    const seed = Math.floor(Math.random() * 10000) + index;
     
-    // Fallback: Create simple URL based on original query
-    // Strip special chars and keep it simple
-    const cleanQuery = query.replace(/[^a-zA-Z0-9 ]/g, "").split(" ").slice(0, 3).join(" ");
-    const encoded = encodeURIComponent(cleanQuery + " real estate architecture");
-    
-    return [
-      `https://image.pollinations.ai/prompt/${encoded}?width=800&height=600&nologo=true&model=flux&seed=101`,
-      `https://image.pollinations.ai/prompt/${encoded}%20interior?width=800&height=600&nologo=true&model=flux&seed=202`,
-      `https://image.pollinations.ai/prompt/${encoded}%20modern?width=800&height=600&nologo=true&model=flux&seed=303`,
-      `https://image.pollinations.ai/prompt/${encoded}%20view?width=800&height=600&nologo=true&model=flux&seed=404`
-    ];
-  }
+    // Use Pollinations.ai with Flux model (generally reliable)
+    return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=600&nologo=true&model=flux&seed=${seed}`;
+  });
 };
 
 export const chatWithPortfolio = async (
