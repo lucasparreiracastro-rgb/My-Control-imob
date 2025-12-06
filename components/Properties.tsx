@@ -24,6 +24,10 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [tempDescription, setTempDescription] = useState('');
 
+  // Date Editing State (inside history table)
+  const [editingDateIndex, setEditingDateIndex] = useState<number | null>(null);
+  const [editDateValue, setEditDateValue] = useState<string>('');
+
   // Filter State
   const [filter, setFilter] = useState('');
   
@@ -75,6 +79,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
       setHistoryFilterEnd('');
       setIsEditingDescription(false);
       setTempDescription(viewingProperty.description || '');
+      setEditingDateIndex(null);
     }
   }, [viewingProperty?.id]);
 
@@ -92,6 +97,23 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
       return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
     }
     return null;
+  };
+
+  // Convert DD/MM/YYYY to YYYY-MM-DD for input
+  const convertToInputFormat = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    return '';
+  };
+
+  // Convert YYYY-MM-DD to DD/MM/YYYY for display/storage
+  const convertFromInputFormat = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
   };
 
   // Derived state for filtered history
@@ -230,6 +252,46 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     setViewingProperty(updatedProperty);
     setIsEditingDescription(false);
   };
+
+  // --- Date Editing Functions ---
+  const handleStartEditDate = (index: number, currentDateStr: string) => {
+    setEditingDateIndex(index);
+    setEditDateValue(convertToInputFormat(currentDateStr));
+  };
+
+  const handleSaveDate = (index: number) => {
+    if (!viewingProperty || !viewingProperty.rentalHistory) return;
+
+    const newDateStr = convertFromInputFormat(editDateValue);
+    if (!newDateStr) return;
+
+    // Create a copy of the history array
+    const updatedHistory = [...viewingProperty.rentalHistory];
+    const record = updatedHistory[index];
+
+    // Always update the main reference date (used for reports)
+    record.date = newDateStr;
+
+    // If it has a checkIn date, sync it
+    if (record.checkIn) {
+        record.checkIn = newDateStr;
+    }
+
+    const updatedProperty = {
+        ...viewingProperty,
+        rentalHistory: updatedHistory
+    };
+
+    onUpdateProperty(updatedProperty);
+    setViewingProperty(updatedProperty);
+    setEditingDateIndex(null);
+  };
+
+  const handleCancelEditDate = () => {
+    setEditingDateIndex(null);
+    setEditDateValue('');
+  };
+  // -----------------------------
 
   const handleAddManualRecord = (e: React.FormEvent) => {
     e.preventDefault();
@@ -653,7 +715,8 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                     <table className="w-full text-sm text-left">
                         <thead className="bg-gray-50 border-b">
                             <tr>
-                                <th className="p-3 font-semibold text-gray-600">Data / Período</th>
+                                <th className="p-3 font-semibold text-gray-600 w-32">Data Ref.</th>
+                                <th className="p-3 font-semibold text-gray-600">Período / Detalhes</th>
                                 <th className="p-3 font-semibold text-gray-600">Tipo</th>
                                 <th className="p-3 font-semibold text-gray-600">Descrição</th>
                                 <th className="p-3 font-semibold text-gray-600 text-right">Valor</th>
@@ -662,16 +725,57 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                         </thead>
                         <tbody className="divide-y">
                             {filteredHistory.length > 0 ? (
-                                filteredHistory.map((record, idx) => (
+                                filteredHistory.map((record, idx) => {
+                                    // Identify the actual index in the main array for updating
+                                    const actualIndex = viewingProperty.rentalHistory.indexOf(record);
+                                    
+                                    return (
                                     <tr key={idx} className="hover:bg-gray-50">
                                         <td className="p-3 text-gray-800">
+                                            {editingDateIndex === actualIndex ? (
+                                                <div className="flex items-center gap-1">
+                                                    <input 
+                                                        type="date" 
+                                                        value={editDateValue}
+                                                        onChange={(e) => setEditDateValue(e.target.value)}
+                                                        className="w-32 p-1 border border-blue-300 rounded text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                                                    />
+                                                    <button 
+                                                        onClick={() => handleSaveDate(actualIndex)}
+                                                        className="text-green-600 hover:bg-green-100 p-1 rounded"
+                                                        title="Salvar"
+                                                    >
+                                                        <Check size={14} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={handleCancelEditDate}
+                                                        className="text-red-600 hover:bg-red-100 p-1 rounded"
+                                                        title="Cancelar"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 group">
+                                                    <span className="font-bold text-gray-800">{record.date}</span>
+                                                    <button 
+                                                        onClick={() => handleStartEditDate(actualIndex, record.date)}
+                                                        className="text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        title="Editar Data de Referência"
+                                                    >
+                                                        <Pencil size={12} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="p-3 text-gray-600 text-xs">
                                           {record.checkIn && record.checkOut ? (
                                             <div className="flex flex-col gap-1">
-                                              <span className="flex items-center gap-1 text-xs text-gray-500"><ArrowRight size={10} /> {record.checkIn}</span>
-                                              <span className="flex items-center gap-1 text-xs text-gray-500"><ArrowRight size={10} /> {record.checkOut}</span>
+                                              <span className="flex items-center gap-1"><ArrowRight size={10} /> Check-in: {record.checkIn}</span>
+                                              <span className="flex items-center gap-1"><ArrowRight size={10} /> Check-out: {record.checkOut}</span>
                                             </div>
                                           ) : (
-                                            record.date
+                                            <span className="text-gray-400 italic">Sem período definido</span>
                                           )}
                                         </td>
                                         <td className="p-3">
@@ -695,10 +799,10 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                                             </button>
                                         </td>
                                     </tr>
-                                ))
+                                )})
                             ) : (
                                 <tr>
-                                    <td colSpan={5} className="p-8 text-center text-gray-500">
+                                    <td colSpan={6} className="p-8 text-center text-gray-500">
                                         {viewingProperty.rentalHistory && viewingProperty.rentalHistory.length > 0 
                                           ? "Nenhum registro encontrado para o período selecionado."
                                           : "Nenhum registro financeiro encontrado."}
