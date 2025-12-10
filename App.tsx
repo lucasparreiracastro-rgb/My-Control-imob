@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Building2, MessageSquareText, LogOut, Menu, X, Settings as SettingsIcon, Lock, User, Key, ChevronRight } from 'lucide-react';
 import { ViewState, Property } from './types';
 import { MOCK_PROPERTIES } from './constants';
@@ -16,8 +17,26 @@ const App: React.FC = () => {
 
   // App State
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
-  const [properties, setProperties] = useState<Property[]>(MOCK_PROPERTIES);
+  
+  // Initialize properties from LocalStorage if available, otherwise use Mock data
+  const [properties, setProperties] = useState<Property[]>(() => {
+    try {
+      const savedData = localStorage.getItem('imobcontrol_data');
+      if (savedData) {
+        return JSON.parse(savedData);
+      }
+    } catch (error) {
+      console.error('Failed to load data from storage:', error);
+    }
+    return MOCK_PROPERTIES;
+  });
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Save to LocalStorage whenever properties change
+  useEffect(() => {
+    localStorage.setItem('imobcontrol_data', JSON.stringify(properties));
+  }, [properties]);
 
   // Sidebar Menu Items
   const menuItems = [
