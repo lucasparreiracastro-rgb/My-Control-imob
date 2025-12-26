@@ -49,21 +49,26 @@ export const extractRentalDataFromPdf = async (
   try {
     const ai = getAiClient();
     
-    const prompt = `
-      Analise detalhadamente este documento financeiro (extrato bancário, relatório de reservas Airbnb/Booking, ou recibo). 
-      Sua tarefa é localizar e extrair TODAS as transações financeiras (receitas e despesas).
-      
-      Critérios de extração:
-      1. Localize a data da transação e formate como DD/MM/YYYY.
-      2. Capture o valor monetário exato (número positivo).
-      3. Crie uma descrição curta (ex: "Aluguel Mensal", "Reserva #123", "Taxa de Limpeza", "Manutenção").
-      4. Classifique como "revenue" para entradas/ganhos ou "expense" para saídas/gastos/taxas.
+    // Usamos o modelo PRO para tarefas ultra complexas de visão documental
+    const modelName = 'gemini-3-pro-preview';
 
-      Vasculhe tabelas e textos em busca de valores. Retorne os dados organizados.
+    const prompt = `
+      VOCÊ É UM AUDITOR FINANCEIRO IMOBILIÁRIO.
+      Analise este documento (PDF) e extraia TODAS as transações financeiras, com foco total em diárias de aluguel e despesas.
+
+      INSTRUÇÕES DE BUSCA:
+      1. LOCALIZAR DIÁRIAS: Procure por termos como "Hospedagem", "Diária", "Pernoite", "Reserva", "Stay", "Nightly Rate", "Repasse", "Payout", "Ganhos".
+      2. LOCALIZAR VALORES: Procure por qualquer valor numérico precedido por "R$", "$" ou em colunas chamadas "Valor", "Preço", "Total", "Crédito", "Líquido".
+      3. LOCALIZAR DATAS: Identifique a data associada ao valor. Se houver período (ex: 01/01 a 05/01), use a data de início. Formato: DD/MM/YYYY.
+      4. CLASSIFICAÇÃO: 
+         - "revenue": Se for entrada de dinheiro, aluguel, bônus.
+         - "expense": Se for taxa de serviço, limpeza, comissão, luz, água, imposto, manutenção (valores negativos ou em colunas de débito).
+
+      IMPORTANTE: Mesmo que o documento seja confuso, tente extrair o máximo de linhas possível. Se encontrar um valor de diária, a descrição deve conter o nome do hóspede ou código da reserva se disponível.
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: modelName,
       contents: {
         parts: [
           { inlineData: { mimeType: mimeType, data: base64Pdf } },
@@ -71,6 +76,8 @@ export const extractRentalDataFromPdf = async (
         ]
       },
       config: {
+        // Aumentamos o orçamento de pensamento para que a IA possa "olhar" o PDF com mais calma
+        thinkingConfig: { thinkingBudget: 16000 }, 
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.ARRAY,
@@ -79,19 +86,19 @@ export const extractRentalDataFromPdf = async (
             properties: {
               date: { 
                 type: Type.STRING, 
-                description: 'Data formatada como DD/MM/YYYY' 
+                description: 'Data da transação (DD/MM/YYYY)' 
               },
               amount: { 
                 type: Type.NUMBER, 
-                description: 'Valor numérico absoluto' 
+                description: 'Valor numérico (ex: 1500.50)' 
               },
               description: { 
                 type: Type.STRING, 
-                description: 'Descrição sucinta da transação' 
+                description: 'O que é (ex: Reserva João Silva, Taxa Airbnb, Diária #982)' 
               },
               type: { 
                 type: Type.STRING, 
-                description: 'Tipo da transação: "revenue" ou "expense"' 
+                description: 'Deve ser "revenue" ou "expense"' 
               }
             },
             required: ['date', 'amount', 'description', 'type']
@@ -101,18 +108,35 @@ export const extractRentalDataFromPdf = async (
     });
 
     const text = response.text;
-    if (!text) return [];
+    if (!text) {
+      console.warn("A IA não conseguiu encontrar dados no PDF.");
+      return [];
+    }
     
     try {
-      const records = JSON.parse(text);
-      return records as RentalRecord[];
+      // Limpeza de segurança para garantir que o JSON seja interpretado corretamente
+      const cleanedJson = text.trim()
+        .replace(/^```json\s*/, '')
+        .replace(/\s*```$/, '')
+        .trim();
+        
+      const records = JSON.parse(cleanedJson);
+      
+      if (!Array.isArray(records)) return [];
+
+      // Sanitização adicional dos dados extraídos
+      return records.map(r => ({
+        ...r,
+        amount: Math.abs(Number(r.amount)), // Garante que o valor seja número positivo no histórico (o tipo define se soma ou subtrai)
+        type: r.type === 'expense' ? 'expense' : 'revenue'
+      }));
     } catch (parseError) {
-      console.error("Erro ao processar JSON da IA:", parseError);
+      console.error("Erro crítico ao parsear resposta da IA:", parseError, text);
       return [];
     }
 
   } catch (error) {
-    console.error("Error extracting PDF data:", error);
+    console.error("Erro na comunicação com a IA durante extração de PDF:", error);
     return [];
   }
 };
