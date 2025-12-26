@@ -1,5 +1,4 @@
-
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Property, RentalRecord } from '../types';
 
 const getAiClient = () => {
@@ -32,7 +31,7 @@ export const generatePropertyDescription = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
 
@@ -51,24 +50,20 @@ export const extractRentalDataFromPdf = async (
     const ai = getAiClient();
     
     const prompt = `
-      Analise este documento financeiro/extrato. 
-      Identifique todas as entradas de valores referentes a diárias, aluguéis ou pagamentos recebidos.
+      Analise detalhadamente este documento financeiro (extrato bancário, relatório de reservas Airbnb/Booking, ou recibo). 
+      Sua tarefa é localizar e extrair TODAS as transações financeiras (receitas e despesas).
       
-      Extraia:
-      1. A data da transação (formato DD/MM/YYYY)
-      2. O valor monetário (número positivo)
-      3. Uma breve descrição (ex: "Diária Airbnb", "Pagamento Aluguel")
+      Critérios de extração:
+      1. Localize a data da transação e formate como DD/MM/YYYY.
+      2. Capture o valor monetário exato (número positivo).
+      3. Crie uma descrição curta (ex: "Aluguel Mensal", "Reserva #123", "Taxa de Limpeza", "Manutenção").
+      4. Classifique como "revenue" para entradas/ganhos ou "expense" para saídas/gastos/taxas.
 
-      Retorne APENAS um JSON array puro, sem markdown, no formato:
-      [
-        { "date": "string", "amount": number, "description": "string" }
-      ]
-      
-      Se não encontrar nada, retorne [].
+      Vasculhe tabelas e textos em busca de valores. Retorne os dados organizados.
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: {
         parts: [
           { inlineData: { mimeType: mimeType, data: base64Pdf } },
@@ -76,20 +71,45 @@ export const extractRentalDataFromPdf = async (
         ]
       },
       config: {
-        responseMimeType: 'application/json'
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              date: { 
+                type: Type.STRING, 
+                description: 'Data formatada como DD/MM/YYYY' 
+              },
+              amount: { 
+                type: Type.NUMBER, 
+                description: 'Valor numérico absoluto' 
+              },
+              description: { 
+                type: Type.STRING, 
+                description: 'Descrição sucinta da transação' 
+              },
+              type: { 
+                type: Type.STRING, 
+                description: 'Tipo da transação: "revenue" ou "expense"' 
+              }
+            },
+            required: ['date', 'amount', 'description', 'type']
+          }
+        }
       }
     });
 
     const text = response.text;
     if (!text) return [];
     
-    const rawData = JSON.parse(text);
-    
-    // Add default type 'revenue' to extracted data
-    return rawData.map((item: any) => ({
-      ...item,
-      type: 'revenue'
-    })) as RentalRecord[];
+    try {
+      const records = JSON.parse(text);
+      return records as RentalRecord[];
+    } catch (parseError) {
+      console.error("Erro ao processar JSON da IA:", parseError);
+      return [];
+    }
 
   } catch (error) {
     console.error("Error extracting PDF data:", error);
@@ -98,13 +118,8 @@ export const extractRentalDataFromPdf = async (
 };
 
 export const searchImages = async (query: string): Promise<string[]> => {
-  // Simulates a short network delay for better UX
   await new Promise(resolve => setTimeout(resolve, 300));
-
-  // Sanitize the query: strip special chars that might break URLs, allow basic accents
   const safeQuery = query.replace(/[^\w\s\u00C0-\u00FF-]/g, '').trim();
-  
-  // Define variations to ensure we get different looking images
   const variations = [
     "architecture modern realistic 8k",
     "interior design luxury bright",
@@ -113,14 +128,9 @@ export const searchImages = async (query: string): Promise<string[]> => {
   ];
 
   return variations.map((suffix, index) => {
-    // Combine safe query with a visual style suffix
     const fullPrompt = `${safeQuery} ${suffix}`;
     const encoded = encodeURIComponent(fullPrompt);
-    
-    // Add a random seed to prevent caching issues and ensure variety
     const seed = Math.floor(Math.random() * 10000) + index;
-    
-    // Use Pollinations.ai with Flux model (generally reliable)
     return `https://image.pollinations.ai/prompt/${encoded}?width=800&height=600&nologo=true&model=flux&seed=${seed}`;
   });
 };
@@ -132,8 +142,6 @@ export const chatWithPortfolio = async (
 ): Promise<string> => {
   try {
     const ai = getAiClient();
-    
-    // Convert portfolio to a simplified string representation for context
     const portfolioContext = portfolio.map(p => 
       `- ID: ${p.id}, ${p.type} em ${p.address}, ${p.bedrooms} quartos, R$ ${p.price}, Status: ${p.status}. Detalhes: ${p.title}`
     ).join('\n');
@@ -142,19 +150,18 @@ export const chatWithPortfolio = async (
       Você é o "Corretor AI", um assistente virtual inteligente do sistema ImobControl AI.
       Seu objetivo é ajudar corretores de imóveis a gerenciar seu portfólio e responder perguntas sobre os imóveis cadastrados.
       
-      DADOS DO PORTFÓLIO ATUAL (Use isso para responder perguntas específicas):
+      DADOS DO PORTFÓLIO ATUAL:
       ${portfolioContext}
       
       DIRETRIZES:
       1. Seja profissional, prestativo e direto.
       2. Se o usuário perguntar sobre preços, calcule médias ou totais se solicitado.
       3. Se perguntarem sobre um imóvel específico, use os detalhes fornecidos.
-      4. Se a pergunta não for sobre imóveis, tente ajudar de forma geral sobre o mercado imobiliário.
-      5. Responda sempre em Português do Brasil.
+      4. Responda sempre em Português do Brasil.
     `;
     
     const chat = ai.chats.create({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: systemInstruction,
       },
