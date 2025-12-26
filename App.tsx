@@ -10,32 +10,50 @@ import Settings from './components/Settings';
 const App: React.FC = () => {
   // Auth State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
 
   // App State
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
-  
-  // Initialize properties from LocalStorage if available, otherwise use Mock data
-  const [properties, setProperties] = useState<Property[]>(() => {
-    try {
-      const savedData = localStorage.getItem('imobcontrol_data');
-      if (savedData) {
-        return JSON.parse(savedData);
-      }
-    } catch (error) {
-      console.error('Failed to load data from storage:', error);
-    }
-    return MOCK_PROPERTIES;
-  });
-
+  const [properties, setProperties] = useState<Property[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
-  // Save to LocalStorage whenever properties change
+  // Load properties based on the logged-in user
   useEffect(() => {
-    localStorage.setItem('imobcontrol_data', JSON.stringify(properties));
-  }, [properties]);
+    if (isLoggedIn && currentUser) {
+      setIsDataLoaded(false);
+      try {
+        const userKey = `imobcontrol_data_${currentUser.toLowerCase()}`;
+        const savedData = localStorage.getItem(userKey);
+        
+        if (savedData) {
+          setProperties(JSON.parse(savedData));
+        } else {
+          // First time this user logs in, give them the mock data as a starter
+          setProperties(MOCK_PROPERTIES);
+        }
+      } catch (error) {
+        console.error('Failed to load user data:', error);
+        setProperties([]);
+      } finally {
+        setIsDataLoaded(true);
+      }
+    } else {
+      setProperties([]);
+      setIsDataLoaded(false);
+    }
+  }, [isLoggedIn, currentUser]);
+
+  // Save to LocalStorage whenever properties change (only if logged in and data is loaded)
+  useEffect(() => {
+    if (isLoggedIn && currentUser && isDataLoaded) {
+      const userKey = `imobcontrol_data_${currentUser.toLowerCase()}`;
+      localStorage.setItem(userKey, JSON.stringify(properties));
+    }
+  }, [properties, isLoggedIn, currentUser, isDataLoaded]);
 
   // Sidebar Menu Items
   const menuItems = [
@@ -48,7 +66,6 @@ const App: React.FC = () => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Lista de usuários permitidos
     const validUsers = [
       { user: 'Parreira', pass: '1234' },
       { user: 'Lucas', pass: '12345' },
@@ -60,6 +77,7 @@ const App: React.FC = () => {
     );
 
     if (matchedUser) {
+      setCurrentUser(matchedUser.user);
       setIsLoggedIn(true);
       setLoginError('');
     } else {
@@ -69,8 +87,11 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setCurrentUser(null);
     setLoginUser('');
     setLoginPass('');
+    setProperties([]);
+    setIsDataLoaded(false);
     setCurrentView('dashboard');
   };
 
@@ -89,7 +110,7 @@ const App: React.FC = () => {
   };
 
   const handleRestoreData = (data: { properties: Property[] }) => {
-    if (window.confirm('Tem certeza? Isso substituirá todos os dados atuais pelos dados do backup.')) {
+    if (window.confirm(`Tem certeza? Isso substituirá todos os dados da conta "${currentUser}" atual pelos dados do backup.`)) {
         setProperties(data.properties);
         alert('Dados restaurados com sucesso!');
     }
@@ -109,7 +130,7 @@ const App: React.FC = () => {
           </div>
           
           <div className="p-8">
-            <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">Acesso Restrito</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">Acesso ao Sistema</h2>
             
             <form onSubmit={handleLogin} className="space-y-4">
               {loginError && (
@@ -128,7 +149,7 @@ const App: React.FC = () => {
                     value={loginUser}
                     onChange={(e) => setLoginUser(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                    placeholder="Digite seu usuário"
+                    placeholder="Nome de usuário"
                   />
                 </div>
               </div>
@@ -142,7 +163,7 @@ const App: React.FC = () => {
                     value={loginPass}
                     onChange={(e) => setLoginPass(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                    placeholder="Digite sua senha"
+                    placeholder="Sua senha"
                   />
                 </div>
               </div>
@@ -151,7 +172,7 @@ const App: React.FC = () => {
                 type="submit" 
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors shadow-lg shadow-blue-900/10 flex items-center justify-center gap-2 mt-2"
               >
-                Entrar no Sistema
+                Entrar
                 <ChevronRight size={18} />
               </button>
             </form>
@@ -171,7 +192,10 @@ const App: React.FC = () => {
           <span className="bg-blue-600 w-8 h-8 rounded-lg flex items-center justify-center text-sm">IC</span>
           ImobControl
         </h1>
-        <p className="text-xs text-gray-500 mt-1 pl-10">Inteligência Imobiliária</p>
+        <div className="mt-4 flex items-center gap-2 px-2 py-1 bg-gray-800 rounded-lg">
+           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+           <span className="text-xs text-gray-300 font-medium">Olá, {currentUser}</span>
+        </div>
       </div>
       
       <nav className="flex-1 p-4 space-y-2">
@@ -204,7 +228,7 @@ const App: React.FC = () => {
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
         >
           <LogOut size={20} />
-          <span className="font-medium">Sair</span>
+          <span className="font-medium">Sair da Conta</span>
         </button>
       </div>
     </div>
@@ -233,32 +257,45 @@ const App: React.FC = () => {
         {/* Top Header Mobile */}
         <header className="bg-white p-4 border-b flex items-center justify-between lg:hidden shadow-sm z-30 print:hidden">
           <h1 className="font-bold text-gray-800">ImobControl AI</h1>
-          <button 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-          >
-            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div className="flex items-center gap-3">
+             <span className="text-xs font-medium text-gray-500">{currentUser}</span>
+             <button 
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+          </div>
         </header>
 
         {/* View Area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 print:overflow-visible print:p-0">
           <div className="max-w-7xl mx-auto print:max-w-none print:w-full">
-            {currentView === 'dashboard' && <Dashboard properties={properties} />}
-            {currentView === 'properties' && (
-              <Properties 
-                properties={properties} 
-                onAddProperty={handleAddProperty} 
-                onUpdateProperty={handleUpdateProperty}
-                onDeleteProperty={handleDeleteProperty}
-              />
-            )}
-            {currentView === 'ai-chat' && <ChatAssistant properties={properties} />}
-            {currentView === 'settings' && (
-              <Settings 
-                properties={properties} 
-                onRestoreData={handleRestoreData}
-              />
+            {!isDataLoaded && isLoggedIn ? (
+               <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                  <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <p>Carregando seus dados...</p>
+               </div>
+            ) : (
+              <>
+                {currentView === 'dashboard' && <Dashboard properties={properties} />}
+                {currentView === 'properties' && (
+                  <Properties 
+                    properties={properties} 
+                    onAddProperty={handleAddProperty} 
+                    onUpdateProperty={handleUpdateProperty}
+                    onDeleteProperty={handleDeleteProperty}
+                  />
+                )}
+                {currentView === 'ai-chat' && <ChatAssistant properties={properties} />}
+                {currentView === 'settings' && (
+                  <Settings 
+                    properties={properties} 
+                    onRestoreData={handleRestoreData}
+                    currentUser={currentUser || ''}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>

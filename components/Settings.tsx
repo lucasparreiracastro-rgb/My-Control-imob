@@ -1,30 +1,35 @@
 import React, { useRef, useState } from 'react';
 import { Property } from '../types';
-import { Download, Upload, Database, AlertCircle, Check, Settings as SettingsIcon, Save } from 'lucide-react';
+import { Download, Upload, Database, AlertCircle, Check, Settings as SettingsIcon, Save, UserCheck } from 'lucide-react';
 
 interface SettingsProps {
   properties: Property[];
   onRestoreData: (data: { properties: Property[] }) => void;
+  currentUser: string;
 }
 
-const Settings: React.FC<SettingsProps> = ({ properties, onRestoreData }) => {
+const Settings: React.FC<SettingsProps> = ({ properties, onRestoreData, currentUser }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [restoreStatus, setRestoreStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const handleBackup = () => {
     const data = {
+      user: currentUser,
       properties,
       backupDate: new Date().toISOString(),
-      version: '1.0'
+      version: '1.1'
     };
 
     const jsonString = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     
+    const dateStr = new Date().toISOString().split('T')[0];
+    const fileName = `imobcontrol_backup_${currentUser.toLowerCase()}_${dateStr}.json`;
+    
     const link = document.createElement('a');
     link.href = url;
-    link.download = `imobcontrol_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -39,6 +44,13 @@ const Settings: React.FC<SettingsProps> = ({ properties, onRestoreData }) => {
       try {
         const jsonContent = event.target?.result as string;
         const data = JSON.parse(jsonContent);
+
+        // Verificação básica se o backup pertence a outro usuário (aviso informativo)
+        if (data.user && data.user.toLowerCase() !== currentUser.toLowerCase()) {
+            if (!window.confirm(`Este backup parece pertencer ao usuário "${data.user}". Deseja realmente restaurar estes dados na conta de "${currentUser}"?`)) {
+                return;
+            }
+        }
 
         if (data.properties && Array.isArray(data.properties)) {
           onRestoreData({
@@ -61,35 +73,47 @@ const Settings: React.FC<SettingsProps> = ({ properties, onRestoreData }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-gray-800 p-2 rounded-lg">
-            <SettingsIcon className="text-white w-6 h-6" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+            <div className="bg-gray-800 p-2 rounded-lg">
+                <SettingsIcon className="text-white w-6 h-6" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800">Configurações</h2>
         </div>
-        <h2 className="text-2xl font-bold text-gray-800">Configurações do Sistema</h2>
+        <div className="bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 flex items-center gap-2">
+            <UserCheck size={18} className="text-blue-600" />
+            <span className="text-sm font-medium text-blue-700">Conta: <span className="font-bold">{currentUser}</span></span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Local Backup Section */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-start gap-4 mb-4">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+          <div className="flex items-start gap-4 mb-6">
             <div className="bg-blue-100 p-3 rounded-full">
               <Download className="text-blue-600 w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-gray-800">Backup Local</h3>
+              <h3 className="text-lg font-bold text-gray-800">Backup da Conta</h3>
               <p className="text-sm text-gray-500 mt-1">
-                Baixar arquivo .JSON no dispositivo.
+                Gere um arquivo com todos os imóveis e histórico de {currentUser}.
               </p>
             </div>
           </div>
-          <button 
-            onClick={handleBackup}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors shadow-sm"
-          >
-            <Save size={18} />
-            Baixar Backup
-          </button>
+          
+          <div className="mt-auto">
+              <button 
+                onClick={handleBackup}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors shadow-sm"
+              >
+                <Save size={18} />
+                Baixar Backup (.json)
+              </button>
+              <p className="text-[10px] text-gray-400 mt-2 text-center italic">
+                O arquivo incluirá apenas os dados vinculados ao seu usuário.
+              </p>
+          </div>
         </div>
 
         {/* Restore Section */}
@@ -101,7 +125,7 @@ const Settings: React.FC<SettingsProps> = ({ properties, onRestoreData }) => {
             <div>
               <h3 className="text-lg font-bold text-gray-800">Restaurar Dados</h3>
               <p className="text-sm text-gray-500 mt-1">
-                Importar arquivo de backup local.
+                Substituir dados atuais de {currentUser} por um backup.
               </p>
             </div>
           </div>
@@ -109,7 +133,7 @@ const Settings: React.FC<SettingsProps> = ({ properties, onRestoreData }) => {
           <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors cursor-pointer"
                onClick={() => fileInputRef.current?.click()}>
             <Database className="w-10 h-10 text-gray-400 mb-2" />
-            <p className="text-sm text-gray-600 font-medium">Selecionar arquivo .JSON</p>
+            <p className="text-sm text-gray-600 font-medium">Selecionar arquivo de backup</p>
             <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -122,14 +146,14 @@ const Settings: React.FC<SettingsProps> = ({ properties, onRestoreData }) => {
           {restoreStatus === 'success' && (
             <div className="mt-4 p-3 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 text-sm border border-green-100">
               <Check size={16} />
-              Restaurado com sucesso!
+              Dados da conta restaurados com sucesso!
             </div>
           )}
 
           {restoreStatus === 'error' && (
             <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 text-sm border border-red-100">
               <AlertCircle size={16} />
-              Erro no arquivo.
+              Erro: Arquivo inválido ou corrompido.
             </div>
           )}
         </div>
