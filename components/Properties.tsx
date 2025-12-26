@@ -1,8 +1,7 @@
+import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, FileText, DollarSign, Trash2, Calendar, Save, ArrowRight, Filter, Camera, Image as ImageIcon, Pencil, Edit2, Zap, Loader2, UploadCloud, Bot } from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
 import { Property, PropertyType, PropertyStatus, RentalRecord, TransactionType } from '../types';
-import { searchImages } from '../services/geminiService';
-// Added Loader2 to the lucide-react imports
-import { Plus, Search, MapPin, Bed, Bath, Square, X, Check, FileText, DollarSign, Trash2, Calendar, Save, ArrowRight, Filter, Camera, Image as ImageIcon, Pencil, Edit2, Zap, Loader2 } from 'lucide-react';
+import { searchImages, extractRentalDataFromPdf } from '../services/geminiService';
 
 interface PropertiesProps {
   properties: Property[];
@@ -16,6 +15,11 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingProperty, setViewingProperty] = useState<Property | null>(null);
   
+  // PDF Import States
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
+  const [extractedRecords, setExtractedRecords] = useState<RentalRecord[]>([]);
+
   // Edit Property State
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -63,6 +67,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
   });
 
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (viewingProperty) {
@@ -135,6 +140,45 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // PDF Handling
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingPdf(true);
+    setExtractedRecords([]);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const records = await extractRentalDataFromPdf(base64, file.type);
+        setExtractedRecords(records);
+        setIsProcessingPdf(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Erro ao processar PDF:", error);
+      alert("Erro ao processar o arquivo. Verifique sua conexão e tente novamente.");
+      setIsProcessingPdf(false);
+    }
+  };
+
+  const confirmImport = () => {
+    if (!viewingProperty || extractedRecords.length === 0) return;
+    
+    const updatedProperty = {
+      ...viewingProperty,
+      rentalHistory: [...extractedRecords, ...(viewingProperty.rentalHistory || [])]
+    };
+    
+    onUpdateProperty(updatedProperty);
+    setViewingProperty(updatedProperty);
+    setIsUploadModalOpen(false);
+    setExtractedRecords([]);
+    alert(`${extractedRecords.length} lançamentos importados com sucesso!`);
   };
 
   const handleImageSearch = async () => {
@@ -378,9 +422,18 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                     )}
                 </div>
                </div>
-               <button onClick={() => setViewingProperty(null)} className="text-gray-500 hover:text-gray-700">
-                 <X size={24} />
-               </button>
+               <div className="flex items-center gap-3">
+                 <button 
+                   onClick={() => setIsUploadModalOpen(true)}
+                   className="hidden sm:flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium border border-blue-200"
+                 >
+                    <UploadCloud size={16} />
+                    Importar Diárias (PDF)
+                 </button>
+                 <button onClick={() => setViewingProperty(null)} className="text-gray-500 hover:text-gray-700">
+                   <X size={24} />
+                 </button>
+               </div>
              </div>
              
              <div className="p-6 overflow-y-auto">
@@ -468,6 +521,101 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
              </div>
            </div>
          </div>
+      )}
+
+      {/* PDF Import Modal */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">Importar Extrato PDF</h3>
+                <p className="text-sm text-gray-500 mt-1">Selecione o relatório mensal para extrair as diárias</p>
+              </div>
+              <button onClick={() => setIsUploadModalOpen(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto">
+              {isProcessingPdf ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                  <div className="relative">
+                    <Loader2 className="w-16 h-16 text-blue-600 animate-spin" />
+                    {/* Added missing Bot icon import from lucide-react above */}
+                    <Bot className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-600" size={24} />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-gray-800 text-lg">Corretor AI está auditando o documento...</p>
+                    <p className="text-sm text-gray-500">Isso pode levar alguns segundos enquanto lemos as tabelas e valores.</p>
+                  </div>
+                </div>
+              ) : extractedRecords.length === 0 ? (
+                <div 
+                  className="border-2 border-dashed border-gray-200 rounded-2xl p-12 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors cursor-pointer group"
+                  onClick={() => pdfInputRef.current?.click()}
+                >
+                  <div className="bg-blue-50 p-4 rounded-full group-hover:bg-blue-100 transition-colors mb-4">
+                    <UploadCloud size={40} className="text-blue-600" />
+                  </div>
+                  <h4 className="font-bold text-gray-800 text-lg">Arraste ou selecione o PDF</h4>
+                  <p className="text-gray-500 text-sm mt-2 max-w-xs">Relatórios do Stays, Ntravel ou Airbnb são compatíveis para leitura automática.</p>
+                  <input type="file" ref={pdfInputRef} accept="application/pdf" className="hidden" onChange={handlePdfUpload} />
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex items-center gap-3">
+                    <Check className="text-green-600" size={24} />
+                    <div>
+                      <h4 className="font-bold text-green-800">Leitura concluída!</h4>
+                      <p className="text-sm text-green-700">A IA identificou {extractedRecords.length} lançamentos. Confira a prévia abaixo:</p>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="p-3 text-left font-semibold text-gray-600">Descrição / Período</th>
+                          <th className="p-3 text-right font-semibold text-gray-600">Valor Líquido</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {extractedRecords.map((rec, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="p-3">
+                              <div className="font-bold text-gray-800">{rec.description}</div>
+                              <div className="text-xs text-gray-500">
+                                {rec.checkIn && rec.checkOut ? `${rec.checkIn} até ${rec.checkOut}` : rec.date}
+                              </div>
+                            </td>
+                            <td className={`p-3 text-right font-bold ${rec.type === 'expense' ? 'text-red-600' : 'text-green-600'}`}>
+                              {rec.type === 'expense' ? '-' : '+'} R$ {rec.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4">
+                    <button 
+                      onClick={() => setExtractedRecords([])}
+                      className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+                    >
+                      Refazer Leitura
+                    </button>
+                    <button 
+                      onClick={confirmImport}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-900/10 flex items-center gap-2"
+                    >
+                      <Check size={20} />
+                      Confirmar Lançamentos
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {isModalOpen && (

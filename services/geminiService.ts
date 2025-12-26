@@ -1,7 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Property, RentalRecord } from '../types';
 
-// Encapsulate initialization to ensure a fresh client is created for each call
 const getAiClient = () => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
@@ -26,17 +25,89 @@ export const generatePropertyDescription = async (
       Retorne APENAS a descrição, sem introduções.
     `;
 
-    // Always use ai.models.generateContent with model and contents parameters.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
 
-    // Access text property directly from the response.
     return response.text || "Não foi possível gerar a descrição.";
   } catch (error) {
     console.error("Error generating description:", error);
     return "Erro ao conectar com a IA. Verifique sua chave API.";
+  }
+};
+
+export const extractRentalDataFromPdf = async (
+  base64Pdf: string, 
+  mimeType: string = 'application/pdf'
+): Promise<RentalRecord[]> => {
+  try {
+    const ai = getAiClient();
+    // Usamos o modelo Pro para melhor precisão em OCR de tabelas financeiras
+    const modelName = 'gemini-3-pro-preview';
+
+    const prompt = `
+      VOCÊ É UM AUDITOR FINANCEIRO EXPERT EM GESTÃO DE ALUGUEL DE TEMPORADA.
+      Analise este relatório de "Prestação de Contas ao Proprietário".
+
+      INSTRUÇÕES DE EXTRAÇÃO:
+      1. RESERVAS: Localize os blocos de reservas. Cada reserva tem um código (ex: CN03J), um nome de hóspede e um período.
+         - Descrição: Use "Código - Nome" (ex: "CN03J - ENDRIUS SCHEEREN").
+         - Período: Extraia check-in e check-out (ex: "02 nov 2025" até "06 nov 2025"). Converta os meses para número (jan=01, nov=11, etc) no formato DD/MM/YYYY.
+         - Valor (amount): Use EXCLUSIVAMENTE o valor indicado como "A receber". Ignore o valor "Total" ou "C/Adm".
+         - Tipo: Classifique como "revenue".
+
+      2. DESPESAS: Procure pela seção ou tabela de "Despesas".
+         - Descrição: Use o nome da despesa (ex: "Fatura de Energia").
+         - Data: Data de vencimento ou competência no formato DD/MM/YYYY.
+         - Valor (amount): Valor da despesa.
+         - Tipo: Classifique como "expense".
+
+      RETORNE APENAS UM ARRAY JSON VÁLIDO.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: {
+        parts: [
+          { inlineData: { mimeType: mimeType, data: base64Pdf } },
+          { text: prompt }
+        ]
+      },
+      config: {
+        thinkingConfig: { thinkingBudget: 32768 }, 
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING, description: 'Data de referência (DD/MM/YYYY)' },
+              checkIn: { type: Type.STRING, description: 'Check-in (DD/MM/YYYY)' },
+              checkOut: { type: Type.STRING, description: 'Check-out (DD/MM/YYYY)' },
+              amount: { type: Type.NUMBER },
+              description: { type: Type.STRING },
+              type: { type: Type.STRING, description: 'revenue ou expense' }
+            },
+            required: ['date', 'amount', 'description', 'type']
+          }
+        }
+      }
+    });
+
+    const text = response.text;
+    if (!text) return [];
+    
+    try {
+      const cleanedJson = text.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+      return JSON.parse(cleanedJson);
+    } catch (parseError) {
+      console.error("Erro no parse do JSON da IA:", parseError, text);
+      return [];
+    }
+  } catch (error) {
+    console.error("Erro Gemini PDF Extraction:", error);
+    return [];
   }
 };
 
@@ -83,7 +154,6 @@ export const chatWithPortfolio = async (
       4. Responda sempre em Português do Brasil.
     `;
     
-    // Create a chat session with the appropriate model and system instruction in config.
     const chat = ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
@@ -96,7 +166,6 @@ export const chatWithPortfolio = async (
     });
 
     const result = await chat.sendMessage({ message });
-    // Use .text getter to extract generated content.
     return result.text || "Desculpe, não entendi.";
 
   } catch (error) {
