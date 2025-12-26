@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Building2, MessageSquareText, LogOut, Menu, X, Settings as SettingsIcon, Lock, User, Key, ChevronRight } from 'lucide-react';
 import { ViewState, Property } from './types';
@@ -48,8 +47,19 @@ const App: React.FC = () => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Credenciais definidas conforme solicitação (Senha 1234 assumida)
-    if (loginUser === 'Parreira' && loginPass === '1234') {
+    
+    // Lista de usuários permitidos
+    const validUsers = [
+      { user: 'Parreira', pass: '1234' },
+      { user: 'Lucas', pass: '12345' },
+      { user: 'Vitor', pass: '12345' }
+    ];
+
+    const matchedUser = validUsers.find(
+      u => u.user.toLowerCase() === loginUser.toLowerCase() && u.pass === loginPass
+    );
+
+    if (matchedUser) {
       setIsLoggedIn(true);
       setLoginError('');
     } else {
