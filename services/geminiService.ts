@@ -48,23 +48,26 @@ export const extractRentalDataFromPdf = async (
 ): Promise<RentalRecord[]> => {
   try {
     const ai = getAiClient();
-    
-    // Usamos o modelo PRO para tarefas ultra complexas de visão documental
     const modelName = 'gemini-3-pro-preview';
 
     const prompt = `
-      VOCÊ É UM AUDITOR FINANCEIRO IMOBILIÁRIO.
-      Analise este documento (PDF) e extraia TODAS as transações financeiras, com foco total em diárias de aluguel e despesas.
+      VOCÊ É UM AUDITOR FINANCEIRO EXPERT EM IMOBILIÁRIAS.
+      Sua missão é extrair TODAS as transações financeiras deste documento PDF.
 
-      INSTRUÇÕES DE BUSCA:
-      1. LOCALIZAR DIÁRIAS: Procure por termos como "Hospedagem", "Diária", "Pernoite", "Reserva", "Stay", "Nightly Rate", "Repasse", "Payout", "Ganhos".
-      2. LOCALIZAR VALORES: Procure por qualquer valor numérico precedido por "R$", "$" ou em colunas chamadas "Valor", "Preço", "Total", "Crédito", "Líquido".
-      3. LOCALIZAR DATAS: Identifique a data associada ao valor. Se houver período (ex: 01/01 a 05/01), use a data de início. Formato: DD/MM/YYYY.
-      4. CLASSIFICAÇÃO: 
-         - "revenue": Se for entrada de dinheiro, aluguel, bônus.
-         - "expense": Se for taxa de serviço, limpeza, comissão, luz, água, imposto, manutenção (valores negativos ou em colunas de débito).
+      REGRAS CRÍTICAS PARA DATAS:
+      - O documento pode conter datas como "25 nov 2025", "25 de Dezembro", "Nov 25, 2025".
+      - Você DEVE converter todas para o formato numérico brasileiro: DD/MM/YYYY.
+      - Se encontrar "Nov" ou "Novembro", use "11". Se encontrar "Dez", use "12", e assim por diante.
 
-      IMPORTANTE: Mesmo que o documento seja confuso, tente extrair o máximo de linhas possível. Se encontrar um valor de diária, a descrição deve conter o nome do hóspede ou código da reserva se disponível.
+      O QUE BUSCAR (RECEITAS - revenue):
+      - Diárias, Reservas, Hospedagens, Repasses, Payouts, Ganhos Brutos, Créditos.
+      - Identifique o nome do hóspede ou código da reserva se disponível.
+
+      O QUE BUSCAR (DESPESAS - expense):
+      - Taxas de limpeza, Taxas de serviço, Comissões, Manutenção, Contas (Luz, Água), Imposto, Estornos.
+
+      VALORES:
+      - Ignore símbolos monetários (R$, $) e capture apenas o número decimal.
     `;
 
     const response = await ai.models.generateContent({
@@ -76,8 +79,8 @@ export const extractRentalDataFromPdf = async (
         ]
       },
       config: {
-        // Aumentamos o orçamento de pensamento para que a IA possa "olhar" o PDF com mais calma
-        thinkingConfig: { thinkingBudget: 16000 }, 
+        // Aumentado para o máximo permitido para garantir raciocínio profundo sobre tabelas e datas por extenso
+        thinkingConfig: { thinkingBudget: 32768 }, 
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.ARRAY,
@@ -86,19 +89,19 @@ export const extractRentalDataFromPdf = async (
             properties: {
               date: { 
                 type: Type.STRING, 
-                description: 'Data da transação (DD/MM/YYYY)' 
+                description: 'Data NORMALIZADA para o formato DD/MM/YYYY (ex: 25/11/2025)' 
               },
               amount: { 
                 type: Type.NUMBER, 
-                description: 'Valor numérico (ex: 1500.50)' 
+                description: 'Valor numérico positivo' 
               },
               description: { 
                 type: Type.STRING, 
-                description: 'O que é (ex: Reserva João Silva, Taxa Airbnb, Diária #982)' 
+                description: 'Nome do hóspede, código da reserva ou tipo de despesa' 
               },
               type: { 
                 type: Type.STRING, 
-                description: 'Deve ser "revenue" ou "expense"' 
+                description: 'Classificação: "revenue" para ganhos ou "expense" para gastos/taxas' 
               }
             },
             required: ['date', 'amount', 'description', 'type']
@@ -109,34 +112,31 @@ export const extractRentalDataFromPdf = async (
 
     const text = response.text;
     if (!text) {
-      console.warn("A IA não conseguiu encontrar dados no PDF.");
+      console.warn("IA não retornou texto.");
       return [];
     }
     
     try {
-      // Limpeza de segurança para garantir que o JSON seja interpretado corretamente
       const cleanedJson = text.trim()
         .replace(/^```json\s*/, '')
         .replace(/\s*```$/, '')
         .trim();
         
       const records = JSON.parse(cleanedJson);
-      
       if (!Array.isArray(records)) return [];
 
-      // Sanitização adicional dos dados extraídos
       return records.map(r => ({
         ...r,
-        amount: Math.abs(Number(r.amount)), // Garante que o valor seja número positivo no histórico (o tipo define se soma ou subtrai)
+        amount: Math.abs(Number(r.amount)),
         type: r.type === 'expense' ? 'expense' : 'revenue'
       }));
     } catch (parseError) {
-      console.error("Erro crítico ao parsear resposta da IA:", parseError, text);
+      console.error("Erro ao processar JSON extraído:", parseError, text);
       return [];
     }
 
   } catch (error) {
-    console.error("Erro na comunicação com a IA durante extração de PDF:", error);
+    console.error("Erro na extração de dados do PDF via Gemini:", error);
     return [];
   }
 };
