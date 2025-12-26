@@ -51,23 +51,26 @@ export const extractRentalDataFromPdf = async (
     const modelName = 'gemini-3-pro-preview';
 
     const prompt = `
-      VOCÊ É UM AUDITOR FINANCEIRO EXPERT EM IMOBILIÁRIAS.
-      Sua missão é extrair TODAS as transações financeiras deste documento PDF.
+      VOCÊ É UM AUDITOR FINANCEIRO EXPERT EM GESTÃO DE ALUGUEL DE TEMPORADA.
+      Analise este relatório de "Prestação de Contas ao Proprietário".
 
-      REGRAS CRÍTICAS PARA DATAS:
-      - O documento pode conter datas como "25 nov 2025", "25 de Dezembro", "Nov 25, 2025".
-      - Você DEVE converter todas para o formato numérico brasileiro: DD/MM/YYYY.
-      - Se encontrar "Nov" ou "Novembro", use "11". Se encontrar "Dez", use "12", e assim por diante.
+      INSTRUÇÕES DE EXTRAÇÃO (ESTILO NTRAVEL/STAYS):
+      1. RESERVAS: Para cada bloco em "Resumo das reservas":
+         - Descrição: Use o formato "Código - Nome do Hóspede" (ex: "CN03J - ENDRIUS SCHEEREN").
+         - Período: Localize as datas (ex: "02 nov 2025 - 06 nov 2025"). Converta para DD/MM/YYYY.
+         - Check-in: A primeira data do período.
+         - Check-out: A segunda data do período.
+         - Valor (amount): Use o valor indicado como "A receber". Este é o lucro líquido do proprietário.
+         - Tipo: "revenue".
 
-      O QUE BUSCAR (RECEITAS - revenue):
-      - Diárias, Reservas, Hospedagens, Repasses, Payouts, Ganhos Brutos, Créditos.
-      - Identifique o nome do hóspede ou código da reserva se disponível.
+      2. DESPESAS: Para cada item em "Despesas":
+         - Descrição: Descrição da despesa (ex: "Fatura de Energia", "Tx. Condomínio").
+         - Data: Data de vencimento ou competência convertida para DD/MM/YYYY.
+         - Valor (amount): Valor da despesa.
+         - Tipo: "expense".
 
-      O QUE BUSCAR (DESPESAS - expense):
-      - Taxas de limpeza, Taxas de serviço, Comissões, Manutenção, Contas (Luz, Água), Imposto, Estornos.
-
-      VALORES:
-      - Ignore símbolos monetários (R$, $) e capture apenas o número decimal.
+      NORMALIZAÇÃO DE MESES:
+      Jan=01, Fev/Feb=02, Mar=03, Abr/Apr=04, Mai/May=05, Jun=06, Jul=07, Ago/Aug=08, Set/Sep=09, Out/Oct=10, Nov=11, Dez/Dec=12.
     `;
 
     const response = await ai.models.generateContent({
@@ -79,7 +82,6 @@ export const extractRentalDataFromPdf = async (
         ]
       },
       config: {
-        // Aumentado para o máximo permitido para garantir raciocínio profundo sobre tabelas e datas por extenso
         thinkingConfig: { thinkingBudget: 32768 }, 
         responseMimeType: 'application/json',
         responseSchema: {
@@ -89,19 +91,27 @@ export const extractRentalDataFromPdf = async (
             properties: {
               date: { 
                 type: Type.STRING, 
-                description: 'Data NORMALIZADA para o formato DD/MM/YYYY (ex: 25/11/2025)' 
+                description: 'Data de referência (DD/MM/YYYY). Use a data de check-in para reservas.' 
+              },
+              checkIn: { 
+                type: Type.STRING, 
+                description: 'Data de entrada (DD/MM/YYYY)' 
+              },
+              checkOut: { 
+                type: Type.STRING, 
+                description: 'Data de saída (DD/MM/YYYY)' 
               },
               amount: { 
                 type: Type.NUMBER, 
-                description: 'Valor numérico positivo' 
+                description: 'Valor líquido (A receber ou Valor da despesa)' 
               },
               description: { 
                 type: Type.STRING, 
-                description: 'Nome do hóspede, código da reserva ou tipo de despesa' 
+                description: 'Identificação completa' 
               },
               type: { 
                 type: Type.STRING, 
-                description: 'Classificação: "revenue" para ganhos ou "expense" para gastos/taxas' 
+                description: 'revenue ou expense' 
               }
             },
             required: ['date', 'amount', 'description', 'type']
@@ -111,17 +121,10 @@ export const extractRentalDataFromPdf = async (
     });
 
     const text = response.text;
-    if (!text) {
-      console.warn("IA não retornou texto.");
-      return [];
-    }
+    if (!text) return [];
     
     try {
-      const cleanedJson = text.trim()
-        .replace(/^```json\s*/, '')
-        .replace(/\s*```$/, '')
-        .trim();
-        
+      const cleanedJson = text.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
       const records = JSON.parse(cleanedJson);
       if (!Array.isArray(records)) return [];
 
@@ -131,12 +134,11 @@ export const extractRentalDataFromPdf = async (
         type: r.type === 'expense' ? 'expense' : 'revenue'
       }));
     } catch (parseError) {
-      console.error("Erro ao processar JSON extraído:", parseError, text);
+      console.error("Erro no parse do JSON:", parseError);
       return [];
     }
-
   } catch (error) {
-    console.error("Erro na extração de dados do PDF via Gemini:", error);
+    console.error("Erro Gemini:", error);
     return [];
   }
 };
