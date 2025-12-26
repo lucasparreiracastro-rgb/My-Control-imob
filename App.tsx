@@ -67,7 +67,7 @@ const App: React.FC = () => {
     e.preventDefault();
     
     const validUsers = [
-      { user: 'Parreira', pass: '1234' },
+      { user: 'Ailton', pass: '12345' },
       { user: 'Lucas', pass: '12345' },
       { user: 'Vitor', pass: '12345' }
     ];
