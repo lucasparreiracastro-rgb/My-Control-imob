@@ -142,7 +142,20 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     }
   };
 
-  // PDF Handling
+  // Helper to read file as base64 promise
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // PDF Handling corrected
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -151,18 +164,21 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     setExtractedRecords([]);
 
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const records = await extractRentalDataFromPdf(base64, file.type);
+      const base64 = await readFileAsBase64(file);
+      const records = await extractRentalDataFromPdf(base64, file.type);
+      
+      if (records && records.length > 0) {
         setExtractedRecords(records);
-        setIsProcessingPdf(false);
-      };
-      reader.readAsDataURL(file);
+      } else {
+        alert("A IA não conseguiu identificar registros neste documento. Verifique se o PDF está legível.");
+      }
     } catch (error) {
       console.error("Erro ao processar PDF:", error);
-      alert("Erro ao processar o arquivo. Verifique sua conexão e tente novamente.");
+      alert("Houve um erro técnico ao processar o arquivo. Tente novamente.");
+    } finally {
       setIsProcessingPdf(false);
+      // Reset input value so same file can be chosen again
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -540,12 +556,11 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                 <div className="flex flex-col items-center justify-center py-12 space-y-4">
                   <div className="relative">
                     <Loader2 className="w-16 h-16 text-blue-600 animate-spin" />
-                    {/* Added missing Bot icon import from lucide-react above */}
                     <Bot className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-600" size={24} />
                   </div>
                   <div className="text-center">
                     <p className="font-bold text-gray-800 text-lg">Corretor AI está auditando o documento...</p>
-                    <p className="text-sm text-gray-500">Isso pode levar alguns segundos enquanto lemos as tabelas e valores.</p>
+                    <p className="text-sm text-gray-500">Isso pode levar alguns segundos enquanto lemos as tabelas e valores líquidos.</p>
                   </div>
                 </div>
               ) : extractedRecords.length === 0 ? (
@@ -557,7 +572,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                     <UploadCloud size={40} className="text-blue-600" />
                   </div>
                   <h4 className="font-bold text-gray-800 text-lg">Arraste ou selecione o PDF</h4>
-                  <p className="text-gray-500 text-sm mt-2 max-w-xs">Relatórios do Stays, Ntravel ou Airbnb são compatíveis para leitura automática.</p>
+                  <p className="text-gray-500 text-sm mt-2 max-w-xs">Padrão Ntravel / Stays compatível para leitura automática.</p>
                   <input type="file" ref={pdfInputRef} accept="application/pdf" className="hidden" onChange={handlePdfUpload} />
                 </div>
               ) : (
@@ -565,8 +580,8 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                   <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex items-center gap-3">
                     <Check className="text-green-600" size={24} />
                     <div>
-                      <h4 className="font-bold text-green-800">Leitura concluída!</h4>
-                      <p className="text-sm text-green-700">A IA identificou {extractedRecords.length} lançamentos. Confira a prévia abaixo:</p>
+                      <h4 className="font-bold text-green-800">Auditoria concluída com sucesso!</h4>
+                      <p className="text-sm text-green-700">Identificamos {extractedRecords.length} lançamentos financeiros.</p>
                     </div>
                   </div>
 
@@ -575,7 +590,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                       <thead className="bg-gray-50 border-b">
                         <tr>
                           <th className="p-3 text-left font-semibold text-gray-600">Descrição / Período</th>
-                          <th className="p-3 text-right font-semibold text-gray-600">Valor Líquido</th>
+                          <th className="p-3 text-right font-semibold text-gray-600">Valor (Líquido)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -601,14 +616,14 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                       onClick={() => setExtractedRecords([])}
                       className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
                     >
-                      Refazer Leitura
+                      Cancelar
                     </button>
                     <button 
                       onClick={confirmImport}
                       className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-900/10 flex items-center gap-2"
                     >
                       <Check size={20} />
-                      Confirmar Lançamentos
+                      Confirmar Importação
                     </button>
                   </div>
                 </div>

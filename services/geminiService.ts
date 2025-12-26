@@ -43,27 +43,28 @@ export const extractRentalDataFromPdf = async (
 ): Promise<RentalRecord[]> => {
   try {
     const ai = getAiClient();
-    // Usamos o modelo Pro para melhor precisão em OCR de tabelas financeiras
+    // Gemini 3 Pro é ideal para OCR de tabelas complexas
     const modelName = 'gemini-3-pro-preview';
 
     const prompt = `
       VOCÊ É UM AUDITOR FINANCEIRO EXPERT EM GESTÃO DE ALUGUEL DE TEMPORADA.
-      Analise este relatório de "Prestação de Contas ao Proprietário".
+      Analise este relatório de "Prestação de Contas ao Proprietário" (padrão Ntravel/Stays).
 
-      INSTRUÇÕES DE EXTRAÇÃO:
-      1. RESERVAS: Localize os blocos de reservas. Cada reserva tem um código (ex: CN03J), um nome de hóspede e um período.
-         - Descrição: Use "Código - Nome" (ex: "CN03J - ENDRIUS SCHEEREN").
-         - Período: Extraia check-in e check-out (ex: "02 nov 2025" até "06 nov 2025"). Converta os meses para número (jan=01, nov=11, etc) no formato DD/MM/YYYY.
-         - Valor (amount): Use EXCLUSIVAMENTE o valor indicado como "A receber". Ignore o valor "Total" ou "C/Adm".
-         - Tipo: Classifique como "revenue".
+      ESTRUTURA DO DOCUMENTO:
+      1. RESUMO DAS RESERVAS:
+         - Identifique cada bloco de reserva.
+         - Extraia o período (Check-in e Check-out).
+         - VALOR LÍQUIDO: Use APENAS o valor indicado em "A receber".
+         - TIPO: "revenue".
 
-      2. DESPESAS: Procure pela seção ou tabela de "Despesas".
-         - Descrição: Use o nome da despesa (ex: "Fatura de Energia").
-         - Data: Data de vencimento ou competência no formato DD/MM/YYYY.
-         - Valor (amount): Valor da despesa.
-         - Tipo: Classifique como "expense".
+      2. DESPESAS:
+         - Procure pela tabela de despesas.
+         - Extraia Descrição, Data e Valor.
+         - TIPO: "expense".
 
       RETORNE APENAS UM ARRAY JSON VÁLIDO.
+      Converta meses (ex: "nov") para números (ex: "11").
+      Datas no formato DD/MM/YYYY.
     `;
 
     const response = await ai.models.generateContent({
@@ -82,12 +83,12 @@ export const extractRentalDataFromPdf = async (
           items: {
             type: Type.OBJECT,
             properties: {
-              date: { type: Type.STRING, description: 'Data de referência (DD/MM/YYYY)' },
-              checkIn: { type: Type.STRING, description: 'Check-in (DD/MM/YYYY)' },
-              checkOut: { type: Type.STRING, description: 'Check-out (DD/MM/YYYY)' },
+              date: { type: Type.STRING },
+              checkIn: { type: Type.STRING },
+              checkOut: { type: Type.STRING },
               amount: { type: Type.NUMBER },
               description: { type: Type.STRING },
-              type: { type: Type.STRING, description: 'revenue ou expense' }
+              type: { type: Type.STRING }
             },
             required: ['date', 'amount', 'description', 'type']
           }
@@ -96,18 +97,29 @@ export const extractRentalDataFromPdf = async (
     });
 
     const text = response.text;
-    if (!text) return [];
+    if (!text) throw new Error("A IA retornou uma resposta vazia.");
     
-    try {
-      const cleanedJson = text.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-      return JSON.parse(cleanedJson);
-    } catch (parseError) {
-      console.error("Erro no parse do JSON da IA:", parseError, text);
-      return [];
-    }
+    // Limpeza robusta para garantir que o JSON seja válido mesmo se a IA incluir markdown
+    const cleanedJson = text.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    const records = JSON.parse(cleanedJson);
+    if (!Array.isArray(records)) throw new Error("A resposta não é um array.");
+
+    return records.map((r: any) => ({
+      date: String(r.date || ''),
+      checkIn: r.checkIn ? String(r.checkIn) : undefined,
+      checkOut: r.checkOut ? String(r.checkOut) : undefined,
+      amount: Math.abs(Number(r.amount || 0)),
+      description: String(r.description || 'Lançamento'),
+      type: r.type === 'expense' ? 'expense' : 'revenue'
+    })) as RentalRecord[];
+
   } catch (error) {
-    console.error("Erro Gemini PDF Extraction:", error);
-    return [];
+    console.error("Erro na extração de PDF:", error);
+    throw error; // Re-throw para ser capturado no componente
   }
 };
 
