@@ -43,40 +43,31 @@ export const extractRentalDataFromPdf = async (
 ): Promise<RentalRecord[]> => {
   try {
     const ai = getAiClient();
-    // Gemini 3 Pro é ideal para OCR de tabelas complexas
+    // Gemini 3 Pro é excelente para OCR de tabelas complexas
     const modelName = 'gemini-3-pro-preview';
 
     const prompt = `
-      VOCÊ É UM AUDITOR FINANCEIRO EXPERT EM GESTÃO DE ALUGUEL DE TEMPORADA.
-      Analise este relatório de "Prestação de Contas ao Proprietário" (padrão Ntravel/Stays).
-
-      ESTRUTURA DO DOCUMENTO:
-      1. RESUMO DAS RESERVAS:
-         - Identifique cada bloco de reserva.
-         - Extraia o período (Check-in e Check-out).
-         - VALOR LÍQUIDO: Use APENAS o valor indicado em "A receber".
-         - TIPO: "revenue".
-
-      2. DESPESAS:
-         - Procure pela tabela de despesas.
-         - Extraia Descrição, Data e Valor.
-         - TIPO: "expense".
-
-      RETORNE APENAS UM ARRAY JSON VÁLIDO.
-      Converta meses (ex: "nov") para números (ex: "11").
-      Datas no formato DD/MM/YYYY.
+      ANALISE O RELATÓRIO DE PRESTAÇÃO DE CONTAS ANEXO.
+      
+      EXTRAIA:
+      1. RESERVAS: Nome do hóspede e período. Valor líquido (coluna "A receber"). Use type: "revenue".
+      2. DESPESAS: Energia, condomínio, taxas, impostos. Use type: "expense".
+      
+      REGRAS:
+      - Datas em DD/MM/YYYY.
+      - Para reservas, a data de referência é o Check-in.
+      - Retorne EXCLUSIVAMENTE um array JSON. Sem texto explicativo.
     `;
 
     const response = await ai.models.generateContent({
       model: modelName,
       contents: {
         parts: [
-          { inlineData: { mimeType: mimeType, data: base64Pdf } },
+          { inlineData: { mimeType: 'application/pdf', data: base64Pdf } },
           { text: prompt }
         ]
       },
       config: {
-        thinkingConfig: { thinkingBudget: 32768 }, 
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.ARRAY,
@@ -96,30 +87,31 @@ export const extractRentalDataFromPdf = async (
       }
     });
 
-    const text = response.text;
-    if (!text) throw new Error("A IA retornou uma resposta vazia.");
+    const rawText = response.text;
+    if (!rawText) throw new Error("A IA não retornou conteúdo.");
     
-    // Limpeza robusta para garantir que o JSON seja válido mesmo se a IA incluir markdown
-    const cleanedJson = text.trim()
+    // Limpeza robusta do JSON: busca apenas o conteúdo entre colchetes
+    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+    const cleanedJson = jsonMatch ? jsonMatch[0] : rawText.trim()
       .replace(/^```json\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim();
 
     const records = JSON.parse(cleanedJson);
-    if (!Array.isArray(records)) throw new Error("A resposta não é um array.");
+    if (!Array.isArray(records)) throw new Error("A resposta da IA não é um array válido.");
 
     return records.map((r: any) => ({
       date: String(r.date || ''),
       checkIn: r.checkIn ? String(r.checkIn) : undefined,
       checkOut: r.checkOut ? String(r.checkOut) : undefined,
-      amount: Math.abs(Number(r.amount || 0)),
+      amount: Math.abs(parseFloat(String(r.amount || 0))),
       description: String(r.description || 'Lançamento'),
       type: r.type === 'expense' ? 'expense' : 'revenue'
     })) as RentalRecord[];
 
-  } catch (error) {
-    console.error("Erro na extração de PDF:", error);
-    throw error; // Re-throw para ser capturado no componente
+  } catch (error: any) {
+    console.error("Erro na extração PDF Gemini:", error);
+    throw new Error(error.message || "Erro desconhecido ao processar o PDF.");
   }
 };
 

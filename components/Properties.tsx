@@ -142,7 +142,6 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     }
   };
 
-  // Helper to read file as base64 promise
   const readFileAsBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -155,10 +154,15 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
     });
   };
 
-  // PDF Handling corrected
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 4 * 1024 * 1024) {
+      alert("O arquivo é muito grande. Por favor, envie um PDF de até 4MB.");
+      if (e.target) e.target.value = '';
+      return;
+    }
 
     setIsProcessingPdf(true);
     setExtractedRecords([]);
@@ -170,14 +174,13 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
       if (records && records.length > 0) {
         setExtractedRecords(records);
       } else {
-        alert("A IA não conseguiu identificar registros neste documento. Verifique se o PDF está legível.");
+        alert("A IA leu o documento, mas não encontrou nenhuma diária ou despesa no formato esperado.");
       }
-    } catch (error) {
-      console.error("Erro ao processar PDF:", error);
-      alert("Houve um erro técnico ao processar o arquivo. Tente novamente.");
+    } catch (error: any) {
+      console.error("Erro no fluxo de upload:", error);
+      alert(error.message || "Houve um erro técnico ao processar o arquivo. Verifique sua conexão e tente novamente.");
     } finally {
       setIsProcessingPdf(false);
-      // Reset input value so same file can be chosen again
       if (e.target) e.target.value = '';
     }
   };
@@ -453,45 +456,59 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
              </div>
              
              <div className="p-6 overflow-y-auto">
-                <div className="mb-6 bg-yellow-50 p-4 rounded-xl border border-yellow-100">
-                  <div className="flex justify-between items-start mb-2">
-                     <h4 className="font-semibold text-yellow-800 text-sm">Observações / Descrição</h4>
-                     {!isEditingDescription && (
-                        <button onClick={() => { setIsEditingDescription(true); setTempDescription(viewingProperty.description); }} className="text-yellow-600 hover:text-yellow-800 p-1 bg-yellow-100 rounded hover:bg-yellow-200"><Edit2 size={16} /></button>
-                     )}
-                  </div>
-                  {isEditingDescription ? (
-                    <div className="space-y-3">
-                       <textarea value={tempDescription} onChange={(e) => setTempDescription(e.target.value)} className="w-full p-3 text-sm border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none bg-white" rows={4} />
-                       <div className="flex justify-end gap-2">
-                          <button onClick={() => setIsEditingDescription(false)} className="px-3 py-1.5 text-yellow-700 text-xs font-medium">Cancelar</button>
-                          <button onClick={handleSaveDescription} className="px-3 py-1.5 bg-yellow-600 text-white text-xs font-medium rounded hover:bg-yellow-700 flex items-center gap-1"><Save size={14} /> Salvar</button>
-                       </div>
-                    </div>
-                  ) : (<p className="text-sm text-gray-700 whitespace-pre-line">{viewingProperty.description || "Nenhuma observação registrada."}</p>)}
-                </div>
-
+                {/* Stats Summary Area */}
                 <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-green-50 p-4 rounded-xl border border-green-100"><p className="text-green-600 text-sm font-medium">Receita Total</p><p className="text-2xl font-bold text-green-800">R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
-                    <div className="bg-red-50 p-4 rounded-xl border border-red-100"><p className="text-red-600 text-sm font-medium">Despesa Total</p><p className="text-2xl font-bold text-red-800">R$ {totalExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
-                    <div className={`${netBalance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'} p-4 rounded-xl border`}><p className={`${netBalance >= 0 ? 'text-blue-600' : 'text-orange-600'} text-sm font-medium`}>Saldo Líquido</p><p className={`${netBalance >= 0 ? 'text-blue-800' : 'text-orange-800'} text-2xl font-bold`}>R$ {netBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
+                    <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                        <p className="text-green-600 text-sm font-medium">Receita</p>
+                        <p className="text-2xl font-bold text-green-800">R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                        <p className="text-red-600 text-sm font-medium">Despesa</p>
+                        <p className="text-2xl font-bold text-red-800">R$ {totalExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className={`${netBalance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'} p-4 rounded-xl border`}>
+                        <p className={`${netBalance >= 0 ? 'text-blue-600' : 'text-orange-600'} text-sm font-medium`}>Saldo</p>
+                        <p className={`${netBalance >= 0 ? 'text-blue-800' : 'text-orange-800'} text-2xl font-bold`}>R$ {netBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
                 </div>
 
                 <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2 text-sm"><Plus size={16} className="text-blue-600" />Lançamento Manual</h4>
                     <form onSubmit={handleAddManualRecord} className="flex flex-col gap-3">
                         <div className="flex gap-4 mb-2">
-                           <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="type" checked={manualRecord.type === 'revenue'} onChange={() => setManualRecord({...manualRecord, type: 'revenue'})} className="text-blue-600" /><span className="text-sm text-gray-700 font-medium">Receita</span></label>
-                           <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="type" checked={manualRecord.type === 'expense'} onChange={() => setManualRecord({...manualRecord, type: 'expense'})} className="text-red-600" /><span className="text-sm text-gray-700 font-medium">Despesa</span></label>
+                           <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="type" checked={manualRecord.type === 'revenue'} onChange={() => setManualRecord({...manualRecord, type: 'revenue'})} className="text-blue-600" />
+                                <span className="text-sm text-gray-700 font-medium">Receita</span>
+                           </label>
+                           <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="type" checked={manualRecord.type === 'expense'} onChange={() => setManualRecord({...manualRecord, type: 'expense'})} className="text-red-600" />
+                                <span className="text-sm text-gray-700 font-medium">Despesa</span>
+                           </label>
                         </div>
                         <div className="flex flex-col md:flex-row gap-3">
-                          <div className="flex-1"><label className="text-xs text-gray-500 font-medium mb-1 block">Data / Check-in</label><input type="date" required value={manualRecord.checkIn} onChange={(e) => setManualRecord({...manualRecord, checkIn: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
-                          {manualRecord.type === 'revenue' && (<div className="flex-1"><label className="text-xs text-gray-500 font-medium mb-1 block">Check-out (Opcional)</label><input type="date" value={manualRecord.checkOut} onChange={(e) => setManualRecord({...manualRecord, checkOut: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>)}
+                          <div className="flex-1">
+                            <label className="text-xs text-gray-500 font-medium mb-1 block">Data / Check-in</label>
+                            <input type="date" required value={manualRecord.checkIn} onChange={(e) => setManualRecord({...manualRecord, checkIn: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                          </div>
+                          {manualRecord.type === 'revenue' && (
+                            <div className="flex-1">
+                                <label className="text-xs text-gray-500 font-medium mb-1 block">Check-out (Opcional)</label>
+                                <input type="date" value={manualRecord.checkOut} onChange={(e) => setManualRecord({...manualRecord, checkOut: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col md:flex-row gap-3 items-end">
-                            <div className="flex-[2] w-full"><label className="text-xs text-gray-500 font-medium mb-1 block">Descrição</label><input type="text" placeholder={manualRecord.type === 'expense' ? "Ex: Conta de Luz, Manutenção" : "Ex: Diária Airbnb"} value={manualRecord.description} onChange={(e) => setManualRecord({...manualRecord, description: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
-                            <div className="flex-1 w-full"><label className="text-xs text-gray-500 font-medium mb-1 block">Valor (R$)</label><input type="number" placeholder="0,00" required step="0.01" min="0" value={manualRecord.amount} onChange={(e) => setManualRecord({...manualRecord, amount: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
-                            <button type="submit" className={`w-full md:w-auto p-2 text-white rounded-lg transition-colors flex items-center justify-center ${manualRecord.type === 'expense' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}><Save size={18} /></button>
+                            <div className="flex-[2] w-full">
+                                <label className="text-xs text-gray-500 font-medium mb-1 block">Descrição</label>
+                                <input type="text" placeholder={manualRecord.type === 'expense' ? "Ex: Conta de Luz" : "Ex: Airbnb Jan"} value={manualRecord.description} onChange={(e) => setManualRecord({...manualRecord, description: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                            </div>
+                            <div className="flex-1 w-full">
+                                <label className="text-xs text-gray-500 font-medium mb-1 block">Valor (R$)</label>
+                                <input type="number" placeholder="0,00" required step="0.01" min="0" value={manualRecord.amount} onChange={(e) => setManualRecord({...manualRecord, amount: e.target.value})} className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                            </div>
+                            <button type="submit" className={`w-full md:w-auto p-2 text-white rounded-lg transition-colors flex items-center justify-center ${manualRecord.type === 'expense' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                <Save size={18} />
+                            </button>
                         </div>
                     </form>
                 </div>
@@ -500,37 +517,53 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                   <h4 className="font-semibold text-gray-700 flex items-center gap-2"><Calendar size={18} />Extrato Financeiro</h4>
                   <div className="flex items-center gap-2 w-full sm:w-auto bg-gray-50 p-2 rounded-lg border border-gray-200">
                     <Filter size={16} className="text-gray-400" />
-                    <div className="flex items-center gap-2"><input type="date" value={historyFilterStart} onChange={(e) => setHistoryFilterStart(e.target.value)} className="bg-white border rounded px-2 py-1 text-xs" /><span className="text-gray-400 text-xs">até</span><input type="date" value={historyFilterEnd} onChange={(e) => setHistoryFilterEnd(e.target.value)} className="bg-white border rounded px-2 py-1 text-xs" /></div>
-                    {(historyFilterStart || historyFilterEnd) && (<button onClick={() => { setHistoryFilterStart(''); setHistoryFilterEnd(''); }} className="text-xs text-red-500"><X size={14} /></button>)}
+                    <div className="flex items-center gap-2">
+                        <input type="date" value={historyFilterStart} onChange={(e) => setHistoryFilterStart(e.target.value)} className="bg-white border rounded px-2 py-1 text-xs" />
+                        <span className="text-gray-400 text-xs">até</span>
+                        <input type="date" value={historyFilterEnd} onChange={(e) => setHistoryFilterEnd(e.target.value)} className="bg-white border rounded px-2 py-1 text-xs" />
+                    </div>
                   </div>
                 </div>
                 
                 <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-gray-50 border-b">
-                            <tr><th className="p-3 font-semibold text-gray-600 w-32">Data Ref.</th><th className="p-3 font-semibold text-gray-600">Período / Detalhes</th><th className="p-3 font-semibold text-gray-600">Tipo</th><th className="p-3 font-semibold text-gray-600">Descrição</th><th className="p-3 font-semibold text-gray-600 text-right">Valor</th><th className="p-3 font-semibold text-gray-600 text-right">Ações</th></tr>
+                            <tr>
+                                <th className="p-3 font-semibold text-gray-600">Data Ref.</th>
+                                <th className="p-3 font-semibold text-gray-600">Tipo</th>
+                                <th className="p-3 font-semibold text-gray-600">Descrição</th>
+                                <th className="p-3 font-semibold text-gray-600 text-right">Valor</th>
+                                <th className="p-3 font-semibold text-gray-600 text-right">Ações</th>
+                            </tr>
                         </thead>
                         <tbody className="divide-y">
                             {filteredHistory.length > 0 ? (
-                                filteredHistory.map((record, idx) => {
-                                    const actualIndex = viewingProperty.rentalHistory.indexOf(record);
-                                    return (
+                                filteredHistory.map((record, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50">
-                                        <td className="p-3 text-gray-800">
-                                            {editingDateIndex === actualIndex ? (
-                                                <div className="flex items-center gap-1"><input type="date" value={editDateValue} onChange={(e) => setEditDateValue(e.target.value)} className="w-32 p-1 border rounded text-xs" /><button onClick={() => handleSaveDate(actualIndex)} className="text-green-600"><Check size={14} /></button><button onClick={handleCancelEditDate} className="text-red-600"><X size={14} /></button></div>
+                                        <td className="p-3 text-gray-800 font-bold">{record.date}</td>
+                                        <td className="p-3">
+                                            {record.type === 'expense' ? (
+                                                <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-medium">Despesa</span>
                                             ) : (
-                                                <div className="flex items-center gap-2 group"><span className="font-bold">{record.date}</span><button onClick={() => handleStartEditDate(actualIndex, record.date)} className="text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button></div>
+                                                <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-medium">Receita</span>
                                             )}
                                         </td>
-                                        <td className="p-3 text-gray-600 text-xs">{record.checkIn && record.checkOut ? (<div className="flex flex-col gap-1"><span>→ Check-in: {record.checkIn}</span><span>→ Check-out: {record.checkOut}</span></div>) : (<span className="text-gray-400 italic">Sem período</span>)}</td>
-                                        <td className="p-3">{record.type === 'expense' ? (<span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-medium">Despesa</span>) : (<span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-medium">Receita</span>)}</td>
                                         <td className="p-3 text-gray-600">{record.description}</td>
-                                        <td className={`p-3 font-medium text-right ${record.type === 'expense' ? 'text-red-600' : 'text-green-600'}`}>{record.type === 'expense' ? '-' : '+'} R$ {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                        <td className="p-3 text-right"><button onClick={() => handleDeleteRecord(record)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
+                                        <td className={`p-3 font-medium text-right ${record.type === 'expense' ? 'text-red-600' : 'text-green-600'}`}>
+                                            {record.type === 'expense' ? '-' : '+'} R$ {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="p-3 text-right">
+                                            <button onClick={() => handleDeleteRecord(record)} className="text-gray-400 hover:text-red-500">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
                                     </tr>
-                                )})
-                            ) : (<tr><td colSpan={6} className="p-8 text-center text-gray-500">Nenhum registro encontrado.</td></tr>)}
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan={5} className="p-8 text-center text-gray-500">Nenhum registro encontrado.</td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -546,7 +579,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
             <div className="p-6 border-b flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-gray-800">Importar Extrato PDF</h3>
-                <p className="text-sm text-gray-500 mt-1">Selecione o relatório mensal para extrair as diárias</p>
+                <p className="text-sm text-gray-500 mt-1">Selecione o relatório mensal (Ntravel/Stays)</p>
               </div>
               <button onClick={() => setIsUploadModalOpen(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
             </div>
@@ -560,7 +593,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                   </div>
                   <div className="text-center">
                     <p className="font-bold text-gray-800 text-lg">Corretor AI está auditando o documento...</p>
-                    <p className="text-sm text-gray-500">Isso pode levar alguns segundos enquanto lemos as tabelas e valores líquidos.</p>
+                    <p className="text-sm text-gray-500">Isso pode levar alguns segundos enquanto lemos os valores líquidos.</p>
                   </div>
                 </div>
               ) : extractedRecords.length === 0 ? (
@@ -571,8 +604,8 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                   <div className="bg-blue-50 p-4 rounded-full group-hover:bg-blue-100 transition-colors mb-4">
                     <UploadCloud size={40} className="text-blue-600" />
                   </div>
-                  <h4 className="font-bold text-gray-800 text-lg">Arraste ou selecione o PDF</h4>
-                  <p className="text-gray-500 text-sm mt-2 max-w-xs">Padrão Ntravel / Stays compatível para leitura automática.</p>
+                  <h4 className="font-bold text-gray-800 text-lg">Selecione o arquivo PDF</h4>
+                  <p className="text-gray-500 text-sm mt-2 max-w-xs">Relatórios de prestação de contas com tabelas de diárias.</p>
                   <input type="file" ref={pdfInputRef} accept="application/pdf" className="hidden" onChange={handlePdfUpload} />
                 </div>
               ) : (
@@ -580,17 +613,17 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                   <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex items-center gap-3">
                     <Check className="text-green-600" size={24} />
                     <div>
-                      <h4 className="font-bold text-green-800">Auditoria concluída com sucesso!</h4>
-                      <p className="text-sm text-green-700">Identificamos {extractedRecords.length} lançamentos financeiros.</p>
+                      <h4 className="font-bold text-green-800">Auditoria concluída!</h4>
+                      <p className="text-sm text-green-700">Identificamos {extractedRecords.length} lançamentos.</p>
                     </div>
                   </div>
 
-                  <div className="border rounded-xl overflow-hidden">
+                  <div className="border rounded-xl overflow-hidden max-h-60 overflow-y-auto">
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-50 border-b">
+                      <thead className="bg-gray-50 border-b sticky top-0">
                         <tr>
-                          <th className="p-3 text-left font-semibold text-gray-600">Descrição / Período</th>
-                          <th className="p-3 text-right font-semibold text-gray-600">Valor (Líquido)</th>
+                          <th className="p-3 text-left font-semibold text-gray-600">Descrição</th>
+                          <th className="p-3 text-right font-semibold text-gray-600">Valor Líquido</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -598,9 +631,7 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                           <tr key={i} className="hover:bg-gray-50">
                             <td className="p-3">
                               <div className="font-bold text-gray-800">{rec.description}</div>
-                              <div className="text-xs text-gray-500">
-                                {rec.checkIn && rec.checkOut ? `${rec.checkIn} até ${rec.checkOut}` : rec.date}
-                              </div>
+                              <div className="text-xs text-gray-500">{rec.date}</div>
                             </td>
                             <td className={`p-3 text-right font-bold ${rec.type === 'expense' ? 'text-red-600' : 'text-green-600'}`}>
                               {rec.type === 'expense' ? '-' : '+'} R$ {rec.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -611,19 +642,10 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
                     </table>
                   </div>
 
-                  <div className="flex justify-end gap-3 pt-4">
-                    <button 
-                      onClick={() => setExtractedRecords([])}
-                      className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
-                    >
-                      Cancelar
-                    </button>
-                    <button 
-                      onClick={confirmImport}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-900/10 flex items-center gap-2"
-                    >
-                      <Check size={20} />
-                      Confirmar Importação
+                  <div className="flex justify-end gap-3 pt-4 border-t">
+                    <button onClick={() => setExtractedRecords([])} className="px-4 py-2 text-gray-600">Cancelar</button>
+                    <button onClick={confirmImport} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold flex items-center gap-2">
+                      <Check size={20} /> Importar
                     </button>
                   </div>
                 </div>
@@ -641,37 +663,26 @@ const Properties: React.FC<PropertiesProps> = ({ properties, onAddProperty, onDe
               <button onClick={handleCloseModal} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700">Foto do Imóvel</label>
-                <div className="w-full h-48 bg-gray-50 rounded-lg border-2 border-gray-200 overflow-hidden mb-2 relative group">
-                    {formData.imageUrl ? (<img src={formData.imageUrl} alt="Capa Atual" className="w-full h-full object-cover" />) : (<div className="w-full h-full flex flex-col items-center justify-center text-gray-400"><ImageIcon size={40} className="mb-2 opacity-50" /><span className="text-xs">Nenhuma imagem</span></div>)}
-                </div>
-                <div className="flex p-1 bg-gray-100 rounded-lg">
-                    <button type="button" onClick={() => setImageTab('upload')} className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${imageTab === 'upload' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Upload</button>
-                    <button type="button" onClick={() => setImageTab('search')} className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${imageTab === 'search' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Buscar Web</button>
-                </div>
-                {imageTab === 'upload' ? (
-                    <div className="w-full py-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-colors" onClick={() => imageInputRef.current?.click()}>
-                        <Camera size={24} className="mb-2 text-gray-400" /><span className="text-xs font-medium text-gray-500">Escolher arquivo</span>
-                        <input type="file" ref={imageInputRef} accept="image/*" className="hidden" onChange={handleImageSelect} />
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        <div className="flex gap-2">
-                            <input type="text" placeholder="Ex: Casa luxo piscina" value={imageSearchQuery} onChange={(e) => setImageSearchQuery(e.target.value)} className="flex-1 p-2 text-sm border rounded-lg" />
-                            <button type="button" onClick={handleImageSearch} disabled={isSearchingImages} className="bg-blue-600 text-white p-2 rounded-lg">{isSearchingImages ? <Loader2 className="animate-spin w-5 h-5" /> : <Search size={20} />}</button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                            {imageSearchResults.map((url, idx) => (<div key={idx} onClick={() => selectSearchedImage(url)} className={`h-24 rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${formData.imageUrl === url ? 'border-blue-600' : 'border-transparent'}`}><img src={url} className="w-full h-full object-cover" /></div>))}
-                        </div>
-                    </div>
-                )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                <input required type="text" className="w-full p-3 border rounded-lg" placeholder="Ex: Apartamento Centro" value={formData.title || ''} onChange={e => setFormData({...formData, title: e.target.value})} />
               </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Título</label><input required type="text" className="w-full p-3 border rounded-lg" placeholder="Ex: Apartamento Centro" value={formData.title || ''} onChange={e => setFormData({...formData, title: e.target.value})} /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">UC (Energia)</label><input type="text" className="w-full p-3 border rounded-lg" placeholder="Ex: 8439201" value={formData.consumerUnit || ''} onChange={e => setFormData({...formData, consumerUnit: e.target.value})} /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Preço Sugerido (R$)</label><input type="number" min="0" step="0.01" className="w-full p-3 border rounded-lg" value={formData.price || ''} onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})} /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Obs.</label><textarea className="w-full p-3 border rounded-lg resize-none" rows={3} value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
-              <div className="flex justify-end gap-3 pt-4 border-t"><button type="button" onClick={handleCloseModal} className="px-4 py-2 text-gray-600">Cancelar</button><button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2"><Check size={18} /> Salvar</button></div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">UC (Energia)</label>
+                <input type="text" className="w-full p-3 border rounded-lg" placeholder="Ex: 8439201" value={formData.consumerUnit || ''} onChange={e => setFormData({...formData, consumerUnit: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Preço (R$)</label>
+                <input type="number" min="0" step="0.01" className="w-full p-3 border rounded-lg" value={formData.price || ''} onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Foto (URL)</label>
+                <input type="text" className="w-full p-3 border rounded-lg" placeholder="https://..." value={formData.imageUrl || ''} onChange={e => setFormData({...formData, imageUrl: e.target.value})} />
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button type="button" onClick={handleCloseModal} className="px-4 py-2 text-gray-600">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2"><Check size={18} /> Salvar</button>
+              </div>
             </form>
           </div>
         </div>
